@@ -14,12 +14,15 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     function_tool,
+    stt as livekit_stt,
     tts as livekit_tts,
 )
 from livekit.agents.llm import StopResponse
+from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN, NotGivenOr
+from livekit.agents.utils import AudioBuffer
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.agents.voice.room_io import RoomInputOptions
-from livekit.plugins import noise_cancellation, openai, silero
+from livekit.plugins import deepgram, noise_cancellation, openai, silero
 
 logger = logging.getLogger("agent_local")
 
@@ -37,13 +40,69 @@ SPEACHES_URL = "http://localhost:8000/v1"
 #   PARAMETER num_ctx 4096
 # Other available models we benchmarked: qwen2.5:7b (raw, ~5 tok/s),
 # gemma3:12b-it-qat (smarter but ~1.6 tok/s — too slow for voice on CPU).
+# Set True to skip LLM + TTS — only log STT comparison results. Lets you
+# rapid-fire utterances to compare STT models without waiting for replies.
+STT_ONLY_MODE = True
+
 LLM_MODEL = "aika-llm"
-# distil-whisper-small.en + WHISPER__CPU_THREADS=8 on the container is the
-# sweet spot — benchmarked at 2.3s for 6s of audio vs 5-6s for medium models,
-# and was actually more accurate than distil-medium on our test phrase.
-STT_MODEL = "Systran/faster-distil-whisper-small.en"
+# faster-whisper-large-v3 (multilingual, full size). Slow on CPU (~10-15s
+# per utterance) but the highest-accuracy Whisper available. Needed because
+# the medium model misheard "steak" → "take" / "let's take" with an
+# Australian accent — proven via side-by-side comparison with Deepgram.
+STT_MODEL = "Systran/faster-whisper-large-v3"
 TTS_MODEL = "speaches-ai/Kokoro-82M-v1.0-ONNX"
 TTS_VOICE = "af_bella"
+
+
+class CompareSTT(livekit_stt.STT):
+    """Runs N STTs in parallel on the same audio and logs all results.
+    Returns the first listed STT's result to the agent (the 'primary' for
+    actual agent use). Useful for A/B/C/...-testing transcript quality across
+    multiple local + cloud STT models on the same mic audio."""
+
+    def __init__(self, engines: list[tuple[str, livekit_stt.STT]]) -> None:
+        if not engines:
+            raise ValueError("Need at least one STT engine")
+        # Use the first engine's capabilities — they all need to be batch (streaming=False)
+        super().__init__(capabilities=engines[0][1].capabilities)
+        self._engines = engines
+        self._label_width = max(len(lbl) for lbl, _ in engines)
+
+    async def _recognize_impl(
+        self,
+        buffer: AudioBuffer,
+        *,
+        language: NotGivenOr[str] = NOT_GIVEN,
+        conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
+    ):
+        async def safe(engine):
+            t0 = asyncio.get_event_loop().time()
+            try:
+                ev = await engine.recognize(buffer, language=language, conn_options=conn_options)
+                return ev, None, asyncio.get_event_loop().time() - t0
+            except Exception as e:
+                return None, e, asyncio.get_event_loop().time() - t0
+
+        results = await asyncio.gather(*[safe(eng) for _, eng in self._engines])
+
+        def text_of(ev, err):
+            if err:
+                return f"<err: {type(err).__name__}>"
+            if not ev or not ev.alternatives:
+                return "<empty>"
+            return ev.alternatives[0].text
+
+        for (label, _), (ev, err, dt) in zip(self._engines, results):
+            logger.info(
+                f"🆎 {label:>{self._label_width}}: [{dt:5.2f}s] {text_of(ev, err)!r}"
+            )
+
+        # Return first non-error result; primary takes priority.
+        for (_, _), (ev, err, _) in zip(self._engines, results):
+            if ev is not None:
+                return ev
+        # All failed — re-raise the first error
+        raise results[0][1]
 
 
 class SpeachesTTS(livekit_tts.TTS):
@@ -106,13 +165,22 @@ class _SpeachesStream(livekit_tts.ChunkedStream):
 class Assistant(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions=(
-                "You are AIKA, voice assistant for chefs. Speak plain English, "
-                "6 words max. No code, no quotes, no JSON. "
-                "Use set_timer / check_timers / cancel_timer for timer tasks."
-            ),
+            instructions="""You are AIKA, an AI Kitchen Assistant helping chefs in a restaurant.
+            You respond via voice so keep responses short and clear. No formatting, no emojis.
+
+            Your main job is managing timers. When a chef says something like "timer steak 4 minutes" or "pasta 3 minutes", use the set_timer tool.
+            When they ask "how long for steak" or "check timers", use the check_timers tool.
+            When they say "cancel steak timer", use the cancel_timer tool.
+
+            Keep confirmations brief, like "Timer set. Steak, 4 minutes." or "Pasta has 2 minutes left."
+            Be helpful but stay out of the way. Chefs are busy.""",
         )
         self.timers = {}
+
+    async def on_user_turn_completed(self, chat_ctx, new_message):
+        # STT-only debug mode: log nothing further and skip LLM/TTS entirely.
+        if STT_ONLY_MODE:
+            raise StopResponse()
 
     @function_tool
     async def set_timer(self, context: RunContext, name: str, minutes: float):
@@ -139,7 +207,9 @@ class Assistant(Agent):
 
         logger.info(f"Timer set: {name} for {minutes} minutes")
         # Speak the reply directly and skip the post-tool LLM call (saves ~5s).
-        await context.session.say(f"{name} timer set, {int(minutes)} minutes.")
+        m = int(minutes) if minutes == int(minutes) else minutes
+        unit = "minute" if m == 1 else "minutes"
+        await context.session.say(f"{name} timer set, {m} {unit}.")
         raise StopResponse()
 
     @function_tool
@@ -151,11 +221,15 @@ class Assistant(Agent):
             parts = []
             now = time.time()
             for name, timer in self.timers.items():
-                remaining = timer["end_time"] - now
-                if remaining > 60:
-                    parts.append(f"{name}: {int(remaining // 60)} minutes left")
+                remaining = max(0, timer["end_time"] - now)
+                if remaining >= 60:
+                    mins = int(remaining // 60)
+                    unit = "minute" if mins == 1 else "minutes"
+                    parts.append(f"{name} has {mins} {unit} left")
                 else:
-                    parts.append(f"{name}: {int(remaining)} seconds left")
+                    secs = int(remaining)
+                    unit = "second" if secs == 1 else "seconds"
+                    parts.append(f"{name} has {secs} {unit} left")
             reply = ". ".join(parts)
         await context.session.say(reply)
         raise StopResponse()
@@ -260,12 +334,13 @@ async def entrypoint(ctx: JobContext):
             stt_conn_options=long_timeout,
             tts_conn_options=long_timeout,
         ),
-        stt=openai.STT(
-            base_url=SPEACHES_URL,
-            api_key="speaches",
-            model=STT_MODEL,
-            language="en",
-        ),
+        stt=CompareSTT([
+            # First listed = primary (result used by agent). Add/remove freely.
+            ("voxtral-3b (GPU)", openai.STT(
+                base_url="http://localhost:8001/v1", api_key="local", language="en",
+                model="mistralai/Voxtral-Mini-3B-2507")),
+            ("deepgram", deepgram.STT(model="nova-3", language="multi")),
+        ]),
         llm=openai.LLM(
             base_url=OLLAMA_URL,
             api_key="ollama",
