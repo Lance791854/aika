@@ -100,3 +100,26 @@ livekit.toml
 
 # --- GitHub stuff from the LiveKit template (workflows need secrets we don't have) ---
 .github/
+
+# --- Frontend (Next.js / Node) ---
+frontend/node_modules/
+frontend/.next/
+frontend/.env*
+!frontend/.env.example
+frontend/coverage/
+frontend/*.tsbuildinfo
+frontend/.DS_Store
+frontend/.github/
+# Frontend's own AI tool clutter
+frontend/.claude/
+frontend/.cursor/
+frontend/.vscode/
+# Random template files in the frontend we don't need committed
+frontend/AGENTS.md
+frontend/CLAUDE.md
+frontend/CODE_OF_CONDUCT.md
+frontend/CONTRIBUTING.md
+frontend/LICENSE
+frontend/TEMPLATE.md
+frontend/renovate.json
+frontend/taskfile.yaml
