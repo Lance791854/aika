@@ -24,6 +24,8 @@ interface WelcomeViewProps {
   onStartCall: () => void;
   stack: Stack;
   setStack: (s: Stack) => void;
+  debug: boolean;
+  setDebug: (v: boolean) => void;
 }
 
 interface StackPickerRowProps {
@@ -75,6 +77,8 @@ export const WelcomeView = ({
   onStartCall,
   stack,
   setStack,
+  debug,
+  setDebug,
   ref,
 }: React.ComponentProps<'div'> & WelcomeViewProps) => {
   return (
@@ -109,6 +113,17 @@ export const WelcomeView = ({
           <p className="text-muted-foreground mt-1 text-[10px] leading-snug text-center">
             Local stack runs on a CPU VPS — expect ~7-12s per turn.
           </p>
+          <button
+            type="button"
+            onClick={() => setDebug(!debug)}
+            className={`mt-2 rounded-md py-1.5 text-xs font-medium transition-colors ${
+              debug
+                ? 'bg-foreground text-background'
+                : 'bg-muted text-muted-foreground hover:bg-muted/70'
+            }`}
+          >
+            Debug overlay: {debug ? 'on' : 'off'}
+          </button>
         </div>
 
         <Button

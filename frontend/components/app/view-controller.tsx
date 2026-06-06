@@ -6,6 +6,7 @@ import { useSessionContext } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
 import { AgentSessionView_01 } from '@/components/agents-ui/blocks/agent-session-view-01';
 import type { Stack } from '@/components/app/app';
+import { DebugOverlay } from '@/components/app/debug-overlay';
 import { WelcomeView } from '@/components/app/welcome-view';
 
 const MotionWelcomeView = motion.create(WelcomeView);
@@ -33,9 +34,17 @@ interface ViewControllerProps {
   appConfig: AppConfig;
   stack: Stack;
   setStack: (s: Stack) => void;
+  debug: boolean;
+  setDebug: (v: boolean) => void;
 }
 
-export function ViewController({ appConfig, stack, setStack }: ViewControllerProps) {
+export function ViewController({
+  appConfig,
+  stack,
+  setStack,
+  debug,
+  setDebug,
+}: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
   const { resolvedTheme } = useTheme();
 
@@ -50,6 +59,8 @@ export function ViewController({ appConfig, stack, setStack }: ViewControllerPro
           onStartCall={start}
           stack={stack}
           setStack={setStack}
+          debug={debug}
+          setDebug={setDebug}
         />
       )}
       {/* Session view */}
@@ -77,6 +88,7 @@ export function ViewController({ appConfig, stack, setStack }: ViewControllerPro
           className="fixed inset-0"
         />
       )}
+      {isConnected && debug && <DebugOverlay key="debug-overlay" />}
     </AnimatePresence>
   );
 }

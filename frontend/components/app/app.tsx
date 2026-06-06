@@ -33,6 +33,7 @@ interface AppProps {
 
 export function App({ appConfig }: AppProps) {
   const [stack, setStack] = useState<Stack>(DEFAULT_STACK);
+  const [debug, setDebug] = useState<boolean>(false);
 
   // Keep a ref to the latest stack so the TokenSource callback closure always
   // reads the current dropdown values — useMemo runs once, but the callback
@@ -67,7 +68,13 @@ export function App({ appConfig }: AppProps) {
     <AgentSessionProvider session={session}>
       <AppSetup />
       <main className="grid h-svh grid-cols-1 place-content-center">
-        <ViewController appConfig={appConfig} stack={stack} setStack={setStack} />
+        <ViewController
+          appConfig={appConfig}
+          stack={stack}
+          setStack={setStack}
+          debug={debug}
+          setDebug={setDebug}
+        />
       </main>
       <StartAudioButton label="Start Audio" />
       <Toaster

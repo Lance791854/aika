@@ -16,6 +16,7 @@ import time
 
 import httpx
 from dotenv import load_dotenv
+from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -292,6 +293,69 @@ async def entrypoint(ctx: JobContext):
         )
 
     session = AgentSession(**session_kwargs)
+
+    # Publish events over the LiveKit data channel so the frontend debug
+    # overlay can show what's actually happening (transcripts, tool calls,
+    # reply text, timings). Frontend filters by topic="aika-debug".
+    def _publish(payload: dict) -> None:
+        payload["at"] = time.time()
+        async def _send():
+            try:
+                await ctx.room.local_participant.publish_data(
+                    json.dumps(payload).encode(),
+                    topic="aika-debug",
+                    reliable=True,
+                )
+            except Exception as e:
+                logger.warning(f"publish_data failed: {e}")
+        asyncio.create_task(_send())
+
+    def _on_metrics(ev):
+        m = ev.metrics
+        t = m.type
+        if t == "stt_metrics":
+            _publish({"type": "stt_metrics", "duration": m.duration,
+                      "audio_duration": m.audio_duration})
+        elif t == "eou_metrics":
+            _publish({"type": "eou_metrics", "transcription_delay": m.transcription_delay})
+        elif t == "llm_metrics":
+            _publish({"type": "llm_metrics", "duration": m.duration,
+                      "ttft": m.ttft, "tokens": m.completion_tokens,
+                      "tok_per_sec": m.tokens_per_second})
+        elif t == "tts_metrics":
+            _publish({"type": "tts_metrics", "duration": m.duration,
+                      "ttfb": m.ttfb, "chars": m.characters_count})
+
+    def _on_user_transcribed(ev):
+        if ev.is_final:
+            _publish({"type": "user_text", "text": ev.transcript})
+
+    def _on_item_added(ev):
+        item = ev.item
+        role = getattr(item, "role", None)
+        text = getattr(item, "text_content", None) or ""
+        if role == "assistant" and text.strip():
+            _publish({"type": "assistant_text", "text": text})
+
+    def _on_tools_executed(ev):
+        for fc in ev.function_calls:
+            args = fc.arguments
+            # Arguments come through as a JSON string from the LLM — parse for
+            # nicer rendering, fall back to raw if it isn't valid JSON.
+            try:
+                args = json.loads(args)
+            except (json.JSONDecodeError, TypeError):
+                pass
+            _publish({"type": "tool_call", "name": fc.name, "args": args})
+
+    session.on("metrics_collected", _on_metrics)
+    session.on("user_input_transcribed", _on_user_transcribed)
+    session.on("conversation_item_added", _on_item_added)
+    session.on("function_tools_executed", _on_tools_executed)
+
+    # Publish stack on join so the overlay can show what's active.
+    _publish({"type": "stack", "stt": stt_choice, "llm": llm_choice,
+              "tts": tts_choice})
 
     await session.start(
         agent=Assistant(),
