@@ -49,17 +49,18 @@ export async function POST(req: Request) {
       roomConfig = RoomConfiguration.fromJson(body.room_config, {
         ignoreUnknownFields: true,
       });
-    } else if (body?.stack) {
+    } else if (body?.stack || body?.wake !== undefined) {
       // Frontend dropdown choices — wrap them as agent dispatch metadata so
       // they reach `ctx.job.metadata` in the Python worker. Only forward
       // valid {cloud|local} values; anything else falls back to defaults.
       const valid = (v: unknown): v is StackChoice => v === 'cloud' || v === 'local';
-      const stack: Stack = {};
-      if (valid(body.stack.stt)) stack.stt = body.stack.stt;
-      if (valid(body.stack.llm)) stack.llm = body.stack.llm;
-      if (valid(body.stack.tts)) stack.tts = body.stack.tts;
+      const meta: Stack & { wake?: boolean } = {};
+      if (valid(body.stack?.stt)) meta.stt = body.stack.stt;
+      if (valid(body.stack?.llm)) meta.llm = body.stack.llm;
+      if (valid(body.stack?.tts)) meta.tts = body.stack.tts;
+      if (typeof body.wake === 'boolean') meta.wake = body.wake;
       roomConfig = new RoomConfiguration({
-        agents: [new RoomAgentDispatch({ metadata: JSON.stringify(stack) })],
+        agents: [new RoomAgentDispatch({ metadata: JSON.stringify(meta) })],
       });
     } else {
       roomConfig = new RoomConfiguration();

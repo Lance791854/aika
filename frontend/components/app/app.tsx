@@ -15,6 +15,7 @@ import { getSandboxTokenSource } from '@/lib/utils';
 
 export type StackChoice = 'cloud' | 'local';
 export type Stack = { stt: StackChoice; llm: StackChoice; tts: StackChoice };
+export type WakeMode = 'off' | 'window' | 'strict';
 
 const DEFAULT_STACK: Stack = { stt: 'cloud', llm: 'cloud', tts: 'cloud' };
 
@@ -34,12 +35,15 @@ interface AppProps {
 export function App({ appConfig }: AppProps) {
   const [stack, setStack] = useState<Stack>(DEFAULT_STACK);
   const [debug, setDebug] = useState<boolean>(false);
+  const [wake, setWake] = useState<WakeMode>('off');
 
-  // Keep a ref to the latest stack so the TokenSource callback closure always
+  // Keep refs to the latest values so the TokenSource callback closure always
   // reads the current dropdown values — useMemo runs once, but the callback
   // it returns can fire any time after.
   const stackRef = useRef(stack);
   stackRef.current = stack;
+  const wakeRef = useRef(wake);
+  wakeRef.current = wake;
 
   const tokenSource = useMemo(() => {
     if (typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string') {
@@ -52,7 +56,7 @@ export function App({ appConfig }: AppProps) {
       const res = await fetch('/api/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stack: stackRef.current }),
+        body: JSON.stringify({ stack: stackRef.current, wake: wakeRef.current }),
       });
       if (!res.ok) throw new Error(`token fetch failed: ${res.status}`);
       return await res.json();
@@ -74,6 +78,8 @@ export function App({ appConfig }: AppProps) {
           setStack={setStack}
           debug={debug}
           setDebug={setDebug}
+          wake={wake}
+          setWake={setWake}
         />
       </main>
       <StartAudioButton label="Start Audio" />

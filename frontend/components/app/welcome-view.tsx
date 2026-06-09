@@ -1,4 +1,4 @@
-import type { Stack, StackChoice } from '@/components/app/app';
+import type { Stack, StackChoice, WakeMode } from '@/components/app/app';
 import { Button } from '@/components/ui/button';
 
 function WelcomeImage() {
@@ -26,6 +26,8 @@ interface WelcomeViewProps {
   setStack: (s: Stack) => void;
   debug: boolean;
   setDebug: (v: boolean) => void;
+  wake: WakeMode;
+  setWake: (v: WakeMode) => void;
 }
 
 interface StackPickerRowProps {
@@ -79,6 +81,8 @@ export const WelcomeView = ({
   setStack,
   debug,
   setDebug,
+  wake,
+  setWake,
   ref,
 }: React.ComponentProps<'div'> & WelcomeViewProps) => {
   return (
@@ -113,10 +117,61 @@ export const WelcomeView = ({
           <p className="text-muted-foreground mt-1 text-[10px] leading-snug text-center">
             Local stack runs on a CPU VPS — expect ~7-12s per turn.
           </p>
+          <div className="mt-2">
+            <div className="text-muted-foreground mb-1 text-[10px] uppercase tracking-wider">
+              When should AIKA reply?
+            </div>
+            <div className="flex gap-1 rounded-md bg-muted p-1">
+              {(
+                [
+                  {
+                    mode: 'off' as WakeMode,
+                    label: 'Always',
+                    desc: 'AIKA replies to every utterance, even side conversations.',
+                  },
+                  {
+                    mode: 'window' as WakeMode,
+                    label: 'After "AIKA"',
+                    desc:
+                      'Say "AIKA" once. AIKA stays awake and listens for 30 seconds after each reply.',
+                  },
+                  {
+                    mode: 'strict' as WakeMode,
+                    label: 'Each command',
+                    desc:
+                      'Every command must start with "AIKA". Otherwise AIKA stays silent.',
+                  },
+                ] as const
+              ).map(({ mode, label }) => {
+                const active = wake === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setWake(mode)}
+                    className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                      active
+                        ? 'bg-foreground text-background'
+                        : 'text-muted-foreground hover:bg-muted/70'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-muted-foreground mt-1.5 text-[10px] leading-snug text-center">
+              {wake === 'off'
+                ? 'AIKA replies to every utterance, even side conversations.'
+                : wake === 'window'
+                  ? 'Say "AIKA" once. AIKA stays awake for 30 seconds after each reply.'
+                  : 'Every command must start with "AIKA". Otherwise AIKA stays silent.'}
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => setDebug(!debug)}
-            className={`mt-2 rounded-md py-1.5 text-xs font-medium transition-colors ${
+            className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
               debug
                 ? 'bg-foreground text-background'
                 : 'bg-muted text-muted-foreground hover:bg-muted/70'

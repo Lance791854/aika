@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useSessionContext } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
 import { AgentSessionView_01 } from '@/components/agents-ui/blocks/agent-session-view-01';
-import type { Stack } from '@/components/app/app';
+import type { Stack, WakeMode } from '@/components/app/app';
 import { DebugOverlay } from '@/components/app/debug-overlay';
 import { WelcomeView } from '@/components/app/welcome-view';
 
@@ -36,6 +36,8 @@ interface ViewControllerProps {
   setStack: (s: Stack) => void;
   debug: boolean;
   setDebug: (v: boolean) => void;
+  wake: WakeMode;
+  setWake: (v: WakeMode) => void;
 }
 
 export function ViewController({
@@ -44,6 +46,8 @@ export function ViewController({
   setStack,
   debug,
   setDebug,
+  wake,
+  setWake,
 }: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
   const { resolvedTheme } = useTheme();
@@ -61,6 +65,8 @@ export function ViewController({
           setStack={setStack}
           debug={debug}
           setDebug={setDebug}
+          wake={wake}
+          setWake={setWake}
         />
       )}
       {/* Session view */}

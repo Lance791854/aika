@@ -167,7 +167,20 @@ def build_tts(choice: str):
 # both deployment modes.
 # ---------------------------------------------------------------------------
 class Assistant(Agent):
-    def __init__(self) -> None:
+    # Words that count as "addressing AIKA" — STTs often mishear the name
+    # depending on accent, so we include common phonetic neighbours seen in
+    # both Deepgram and Whisper outputs. Compared lowercase.
+    WAKE_WORDS = (
+        "aika", "ika", "ayka", "ica",       # the basics
+        "alka", "alika", "iika",              # Deepgram variants
+        "aica", "aiko", "ayko",              # ending-vowel variants
+    )
+    # How long AIKA stays "awake" after a wake word in `window` mode. Lets the
+    # user say "AIKA" once and then chat normally — works around STT dropping
+    # the wake word on follow-up utterances.
+    WAKE_WINDOW_SEC = 30.0
+
+    def __init__(self, wake_mode: str = "off") -> None:
         super().__init__(
             instructions="""You are AIKA, an AI Kitchen Assistant helping chefs in a restaurant.
             You respond via voice so keep responses short and clear. No formatting, no emojis.
@@ -180,6 +193,22 @@ class Assistant(Agent):
             Be helpful but stay out of the way. Chefs are busy.""",
         )
         self.timers: dict = {}
+        self._wake_mode = wake_mode if wake_mode in ("off", "window", "strict") else "off"
+        self._last_wake_at: float = 0.0
+
+    async def on_user_turn_completed(self, chat_ctx, new_message):
+        if self._wake_mode == "off":
+            return
+        text = (new_message.text_content or "").lower()
+        heard_wake = any(w in text for w in self.WAKE_WORDS)
+        now = time.time()
+        if heard_wake:
+            self._last_wake_at = now
+            return
+        if self._wake_mode == "window" and (now - self._last_wake_at) < self.WAKE_WINDOW_SEC:
+            return
+        logger.info(f"wake gate ({self._wake_mode}) skipping reply for {text!r}")
+        raise StopResponse()
 
     @function_tool
     async def set_timer(self, context: RunContext, name: str, minutes: float):
@@ -268,7 +297,15 @@ async def entrypoint(ctx: JobContext):
     stt_choice = choices.get("stt", "cloud")
     llm_choice = choices.get("llm", "cloud")
     tts_choice = choices.get("tts", "cloud")
-    logger.info(f"📋 stack stt={stt_choice} llm={llm_choice} tts={tts_choice}")
+    # wake mode: "off" (always respond), "window" (wake once, awake 30s),
+    # or "strict" (every utterance needs the wake word).
+    wake_mode = str(choices.get("wake", "off"))
+    if wake_mode not in ("off", "window", "strict"):
+        wake_mode = "off"
+    logger.info(
+        f"📋 stack stt={stt_choice} llm={llm_choice} tts={tts_choice}"
+        f" wake_mode={wake_mode}"
+    )
 
     # Local inference is slow — give the framework a longer timeout for any
     # slot that's pointing at a self-hosted endpoint, otherwise it'll retry
@@ -358,7 +395,7 @@ async def entrypoint(ctx: JobContext):
               "tts": tts_choice})
 
     await session.start(
-        agent=Assistant(),
+        agent=Assistant(wake_mode=wake_mode),
         room=ctx.room,
     )
 
