@@ -54,6 +54,9 @@ KMS
 tmp/
 temp/
 
+# --- aika data (temperature logs, notes) ---
+data/
+
 # --- OS ---
 .DS_Store
 .AppleDouble

@@ -35,6 +35,8 @@ from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.agents.voice.room_io import RoomInputOptions
 from livekit.plugins import cartesia, deepgram, groq, noise_cancellation, openai, silero
 
+import storage
+
 logger = logging.getLogger("agent_aika")
 
 load_dotenv(".env.local")
@@ -185,11 +187,20 @@ class Assistant(Agent):
             instructions="""You are AIKA, an AI Kitchen Assistant helping chefs in a restaurant.
             You respond via voice so keep responses short and clear. No formatting, no emojis.
 
-            Your main job is managing timers. When a chef says something like "timer steak 4 minutes" or "pasta 3 minutes", use the set_timer tool.
+            You manage timers, temperatures, and notes.
+
+            Timers. When a chef says something like "timer steak 4 minutes" or "pasta 3 minutes", use the set_timer tool.
             When they ask "how long for steak" or "check timers", use the check_timers tool.
             When they say "cancel steak timer", use the cancel_timer tool.
 
-            Keep confirmations brief, like "Timer set. Steak, 4 minutes." or "Pasta has 2 minutes left."
+            Temperatures. When a chef says something like "log the freezer at minus eighteen" or "fridge is four degrees", use the log_temperature tool.
+            Locations are things like "freezer", "fridge", "chicken", "lamb". Negative numbers are fine for frozen items.
+            When they ask "what was the freezer at" or "check the fridge temperature", use the check_temperature tool.
+
+            Notes. When a chef says something like "make a note we're out of butter" or "remind the morning shift to defrost the lamb", use the add_note tool. This is for anything they want remembered later — out-of-stock items, handovers, reminders.
+            When they ask "what notes do we have", "what are we out of", or "what did I say to do", use the list_notes tool.
+
+            Keep confirmations brief, like "Timer set. Steak, 4 minutes.", "Logged. Freezer at minus 18.", or "Noted."
             Be helpful but stay out of the way. Chefs are busy.""",
         )
         self.timers: dict = {}
@@ -275,6 +286,60 @@ class Assistant(Agent):
             await context.session.say(f"{name} cancelled.")
         else:
             await context.session.say(f"No timer for {name}.")
+        raise StopResponse()
+
+    @function_tool
+    async def log_temperature(self, context: RunContext, location: str, celsius: float):
+        """Record a temperature reading for a fridge, freezer, or cooked item.
+
+        Args:
+            location: Where the reading is from, like "freezer", "fridge", "chicken"
+            celsius: The temperature in degrees Celsius (use negatives for sub-zero)
+        """
+        storage.add_temperature(location, celsius)
+        logger.info(f"logged temperature: {location} = {celsius}C")
+        c = int(celsius) if celsius == int(celsius) else celsius
+        await context.session.say(f"Logged. {location} at {c} degrees.")
+        raise StopResponse()
+
+    @function_tool
+    async def check_temperature(self, context: RunContext, location: str):
+        """Read back the most recent temperature for a location.
+
+        Args:
+            location: Where to check, like "freezer" or "fridge"
+        """
+        entry = storage.latest_temperature(location)
+        if not entry:
+            await context.session.say(f"No reading for {location}.")
+        else:
+            c = entry["celsius"]
+            c = int(c) if c == int(c) else c
+            await context.session.say(f"{location} was {c} degrees.")
+        raise StopResponse()
+
+    @function_tool
+    async def add_note(self, context: RunContext, text: str):
+        """Save a short note for the kitchen — out-of-stock items, reminders, handovers.
+
+        Args:
+            text: What to remember, like "out of butter" or "defrost lamb for tomorrow"
+        """
+        storage.add_note(text)
+        logger.info(f"note added: {text}")
+        await context.session.say("Noted.")
+        raise StopResponse()
+
+    @function_tool
+    async def list_notes(self, context: RunContext):
+        """Read back saved notes — used for "what notes", "what are we out of", "what did I say to do"."""
+        notes = storage.list_notes()
+        if not notes:
+            await context.session.say("No notes yet.")
+        else:
+            # last few only — chefs don't want a wall of text
+            recent = [n["text"] for n in notes[-5:]]
+            await context.session.say(". ".join(recent))
         raise StopResponse()
 
 
