@@ -169,6 +169,8 @@ def build_tts(choice: str):
 # both deployment modes.
 # ---------------------------------------------------------------------------
 class Assistant(Agent):
+    WAKE_WINDOW_SEC = 30
+
     # Words that count as "addressing AIKA" — STTs often mishear the name
     # depending on accent, so we include common phonetic neighbours seen in
     # both Deepgram and Whisper outputs. Compared lowercase.
@@ -182,7 +184,7 @@ class Assistant(Agent):
     # the wake word on follow-up utterances.
     WAKE_WINDOW_SEC = 30.0
 
-    def __init__(self, wake_mode: str = "off") -> None:
+    def __init__(self, wake_mode: str = "off", publish_fn=None) -> None:
         super().__init__(
             instructions="""You are AIKA, an AI Kitchen Assistant helping chefs in a restaurant.
             You respond via voice so keep responses short and clear. No formatting, no emojis.
@@ -204,8 +206,26 @@ class Assistant(Agent):
             Be helpful but stay out of the way. Chefs are busy.""",
         )
         self.timers: dict = {}
-        self._wake_mode = wake_mode if wake_mode in ("off", "window", "strict") else "off"
-        self._last_wake_at: float = 0.0
+        self._wake_mode = wake_mode
+        self._publish = publish_fn or (lambda p: None)
+        self._last_wake_at: float = 0
+
+    def _emit_state(self) -> None:
+        temps = []
+        for t in storage.recent_temperatures(5):
+            temps.append({
+                **t,
+                "out_of_range": storage.check_range(t["location"], t["celsius"]) is not None,
+            })
+        self._publish({
+            "type": "state",
+            "timers": [
+                {"name": n, "end_time": t["end_time"]}
+                for n, t in self.timers.items()
+            ],
+            "temperatures": temps,
+            "notes": storage.recent_notes(5),
+        })
 
     async def on_user_turn_completed(self, chat_ctx, new_message):
         if self._wake_mode == "off":
@@ -245,6 +265,7 @@ class Assistant(Agent):
         self.timers[name.lower()] = {"end_time": end_time, "task": task}
 
         logger.info(f"Timer set: {name} for {minutes} minutes")
+        self._emit_state()
         m = int(minutes) if minutes == int(minutes) else minutes
         unit = "minute" if m == 1 else "minutes"
         await context.session.say(f"{name} timer set, {m} {unit}.")
@@ -284,6 +305,7 @@ class Assistant(Agent):
             del self.timers[name.lower()]
             logger.info(f"Timer cancelled: {name}")
             await context.session.say(f"{name} cancelled.")
+            self._emit_state()
         else:
             await context.session.say(f"No timer for {name}.")
         raise StopResponse()
@@ -304,6 +326,7 @@ class Assistant(Agent):
         if warning:
             reply += f" Warning. {warning.capitalize()}."
         await context.session.say(reply)
+        self._emit_state()
         raise StopResponse()
 
     @function_tool
@@ -332,6 +355,7 @@ class Assistant(Agent):
         storage.add_note(text)
         logger.info(f"note added: {text}")
         await context.session.say("Noted.")
+        self._emit_state()
         raise StopResponse()
 
     @function_tool
@@ -463,10 +487,10 @@ async def entrypoint(ctx: JobContext):
     _publish({"type": "stack", "stt": stt_choice, "llm": llm_choice,
               "tts": tts_choice})
 
-    await session.start(
-        agent=Assistant(wake_mode=wake_mode),
-        room=ctx.room,
-    )
+    assistant = Assistant(wake_mode=wake_mode, publish_fn=_publish)
+    await session.start(agent=assistant, room=ctx.room)
+    # initial state dump so the overlay shows what's already saved.
+    assistant._emit_state()
 
 
 if __name__ == "__main__":

@@ -78,3 +78,11 @@ def add_note(text: str) -> None:
 
 def list_notes() -> list[dict]:
     return _load()["notes"]
+
+
+def recent_temperatures(limit: int = 5) -> list[dict]:
+    return list(reversed(_load()["temperatures"]))[:limit]
+
+
+def recent_notes(limit: int = 5) -> list[dict]:
+    return list(reversed(_load()["notes"]))[:limit]
