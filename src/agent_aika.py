@@ -299,7 +299,11 @@ class Assistant(Agent):
         storage.add_temperature(location, celsius)
         logger.info(f"logged temperature: {location} = {celsius}C")
         c = int(celsius) if celsius == int(celsius) else celsius
-        await context.session.say(f"Logged. {location} at {c} degrees.")
+        reply = f"Logged. {location} at {c} degrees."
+        warning = storage.check_range(location, celsius)
+        if warning:
+            reply += f" Warning. {warning.capitalize()}."
+        await context.session.say(reply)
         raise StopResponse()
 
     @function_tool

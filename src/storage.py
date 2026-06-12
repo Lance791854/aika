@@ -7,6 +7,38 @@ from pathlib import Path
 
 DATA_PATH = Path(os.environ.get("AIKA_DATA_PATH", "data/aika.json"))
 
+# safe temperature ranges per FSANZ (Food Standards Australia New Zealand).
+# https://www.foodstandards.gov.au/consumer/safety/temperature
+#   frozen food kept at -18C or colder
+#   refrigerated food at 5C or colder
+#   hot food held above 60C
+#   cooked poultry to minimum 75C internal
+TEMP_RANGES = {
+    "freezer": (-25, -18),
+    "fridge": (0, 5),
+    "cool room": (0, 5),
+    "hot hold": (60, 90),
+    "chicken": (75, 100),
+    "poultry": (75, 100),
+    "beef": (63, 100),
+    "pork": (63, 100),
+    "lamb": (63, 100),
+    "fish": (63, 100),
+}
+
+
+def check_range(location: str, celsius: float) -> str | None:
+    """Return a warning string if outside the safe range, otherwise None."""
+    rng = TEMP_RANGES.get(location.lower())
+    if rng is None:
+        return None
+    low, high = rng
+    if celsius < low:
+        return f"{location} is below safe range, should be at least {low} degrees"
+    if celsius > high:
+        return f"{location} is above safe range, should be at most {high} degrees"
+    return None
+
 
 def _load() -> dict:
     if not DATA_PATH.exists():
