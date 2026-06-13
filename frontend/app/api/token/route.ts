@@ -54,11 +54,13 @@ export async function POST(req: Request) {
       // they reach `ctx.job.metadata` in the Python worker. Only forward
       // valid {cloud|local} values; anything else falls back to defaults.
       const valid = (v: unknown): v is StackChoice => v === 'cloud' || v === 'local';
-      const meta: Stack & { wake?: boolean } = {};
+      const validWake = (v: unknown): v is 'off' | 'window' | 'strict' =>
+        v === 'off' || v === 'window' || v === 'strict';
+      const meta: Stack & { wake?: string } = {};
       if (valid(body.stack?.stt)) meta.stt = body.stack.stt;
       if (valid(body.stack?.llm)) meta.llm = body.stack.llm;
       if (valid(body.stack?.tts)) meta.tts = body.stack.tts;
-      if (typeof body.wake === 'boolean') meta.wake = body.wake;
+      if (validWake(body.wake)) meta.wake = body.wake;
       roomConfig = new RoomConfiguration({
         agents: [new RoomAgentDispatch({ metadata: JSON.stringify(meta) })],
       });

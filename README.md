@@ -1,42 +1,114 @@
-# AIKA — AI Kitchen Assistant
+# AIKA
 
-A voice AI agent for chefs in a busy kitchen, built with [LiveKit Agents](https://github.com/livekit/agents).
-The chef talks, AIKA listens, sets timers, checks them, and speaks back unprompted when a timer fires.
+A voice AI agent for chefs. Built on [LiveKit Agents](https://github.com/livekit/agents).
 
-University project exploring the **cost / privacy / latency tradeoff** between cloud APIs and
-fully self-hosted inference on CPU-only hardware.
+The chef talks. AIKA listens, sets timers, logs temperatures, takes notes, and
+speaks back unprompted when something needs attention.
 
-## Two variants
+## What it does
 
-| File | Stack | Latency | Privacy |
-|---|---|---|---|
-| `src/agent.py` | LiveKit Cloud + Deepgram (STT) + Groq Llama-3.3-70B (LLM) + Cartesia (TTS) | ~1-2s | API providers see audio + text |
-| `src/agent_local.py` | LiveKit transport only + self-hosted Ollama (qwen2.5:3b) + Speaches (Whisper STT + Kokoro TTS) | ~6-8s | nothing leaves your hardware |
+- **Timers** — `"AIKA, steak four minutes"` / `"how long for steak"` / `"cancel steak timer"`
+- **Temperatures** — `"log the freezer at minus eighteen"` / `"what was the freezer at"`. Readings outside [FSANZ](https://www.foodstandards.gov.au/) safe ranges (freezer below -18, fridge 0-5, cooked poultry above 75, etc.) trigger an immediate warning.
+- **Notes** — `"make a note we're out of butter"` / `"what notes do we have"` / `"what are we out of"`
+- **Wake modes** — always / after `"AIKA"` (30s window) / each command must include `"AIKA"`
+- **Status panel** — fixed side panel during the call. Running timers with countdown, latest temperature per location, latest notes. Out-of-range temps go red. Includes a button to run a safety check (AIKA scans recent readings and speaks any warnings), plus per-card buttons to inject fake low/ok/high readings for testing the alerts.
+- **Debug overlay** — per-turn STT / LLM / TTS timings, transcripts, tool calls
+- **Per-call stack toggle** — pick cloud or self-hosted for each of STT / LLM / TTS independently. Defaults to cloud. Choices ride in the agent dispatch metadata.
 
-Both share the same `Assistant` class — same prompt, same tools (`set_timer`, `check_timers`, `cancel_timer`).
-The local variant is a drop-in replacement; only the plugin instantiations differ.
+## Layout
+
+```
+src/
+  agent.py        Clean cloud-only reference. 3 timer tools. Forkable starting point.
+  agent_local.py  Debug variant. CompareSTT lets you A/B multiple STT engines (incl Voxtral) on the same mic audio.
+  agent_aika.py   Production agent. Reads ctx.job.metadata, picks plugins per call, all 7 tools, safety check listener.
+  storage.py      JSON-file persistence for temperatures + notes. FSANZ ranges baked in.
+frontend/         Next.js, forked from LiveKit's agent-starter-react. Toggles, status panel, debug overlay.
+tests/            LLM-as-judge evals (friendliness, grounding, refusal).
+```
+
+## Architecture
+
+```
+  Browser
+     │
+     ▼
+  Caddy + Next.js frontend
+     │
+     ▼
+  LiveKit Cloud
+     │
+     ▼
+  aika-worker (Python)
+     │
+     ├── Cloud APIs: Deepgram / Groq / Cartesia
+     └── Self-hosted: Ollama + Speaches
+```
+
+The worker stays alive as a pm2 process. The frontend is a static `next start` behind Caddy
+for HTTPS. The inference services are optional.
 
 ## Setup
 
-Requires Python 3.10+ and [`uv`](https://github.com/astral-sh/uv).
+Backend (agent + tests) needs Python 3.10+ and [`uv`](https://github.com/astral-sh/uv):
 
 ```bash
 uv sync
-cp .env.example .env.local   # fill in your LiveKit + provider keys
+cp .env.example .env.local
+# Add LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET
+# and provider keys you actually want: DEEPGRAM_API_KEY, GROQ_API_KEY, CARTESIA_API_KEY
+```
+
+Frontend needs Node 20+ and [`pnpm`](https://pnpm.io/):
+
+```bash
+cd frontend
+pnpm install
+cp .env.example .env.local
+# Same LIVEKIT_* keys as above
 ```
 
 ## Run
 
+Three terminals for the full setup:
+
 ```bash
-# Talk to AIKA in your terminal (uses mic + speakers directly)
-uv run python src/agent.py console
+# 1. Production agent worker
+uv run python src/agent_aika.py dev
 
-# Or as a worker connected to a LiveKit room (for use with a web frontend)
+# 2. Frontend dev server
+cd frontend && pnpm dev
+
+# 3. Optional: SSH tunnel to the self-hosted inference box,
+#    so the "local" stack toggles actually reach Ollama + Speaches
+ssh -L 11434:localhost:11434 -L 8000:localhost:8000 -N <user>@<inference-host>
+```
+
+Then open http://localhost:3000, pick a stack, click Start.
+
+Just the cloud reference agent (no inference setup):
+
+```bash
 uv run python src/agent.py dev
+```
 
-# Self-hosted variant — needs Ollama + Speaches reachable at the URLs in agent_local.py
+STT-comparison variant for accent debugging:
+
+```bash
 uv run python src/agent_local.py dev
 ```
+
+## Self-hosted inference (optional)
+
+The "local" toggles route to:
+
+- **Ollama** on `:11434` running `aika-llm` (qwen2.5:7b with `PARAMETER num_thread 8`)
+- **Speaches** on `:8000` serving `Systran/faster-whisper-medium` (STT) and `speaches-ai/Kokoro-82M-v1.0-ONNX` (TTS)
+
+Both can live on any machine the agent worker can reach. URLs are in `src/agent_aika.py`.
+
+If the inference box is exposed to the public internet, lock the ports down to just the
+agent worker's IP.
 
 ## Tests
 
@@ -44,7 +116,8 @@ uv run python src/agent_local.py dev
 uv run pytest
 ```
 
-LLM-as-judge eval suite under `tests/` (friendliness, grounding, safety refusal).
+These use OpenAI `gpt-4.1-mini` as the judge, so they need `OPENAI_API_KEY` for tests only —
+the agent itself doesn't call OpenAI.
 
 ## License
 
