@@ -81,7 +81,17 @@ def list_notes() -> list[dict]:
 
 
 def recent_temperatures(limit: int = 5) -> list[dict]:
-    return list(reversed(_load()["temperatures"]))[:limit]
+    """latest reading per location, newest first."""
+    seen: set[str] = set()
+    result: list[dict] = []
+    for entry in reversed(_load()["temperatures"]):
+        if entry["location"] in seen:
+            continue
+        seen.add(entry["location"])
+        result.append(entry)
+        if len(result) >= limit:
+            break
+    return result
 
 
 def recent_notes(limit: int = 5) -> list[dict]:

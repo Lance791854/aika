@@ -492,6 +492,53 @@ async def entrypoint(ctx: JobContext):
     # initial state dump so the overlay shows what's already saved.
     assistant._emit_state()
 
+    # frontend buttons publish to this topic — agent listens and acts.
+    async def run_safety_check():
+        bad = []
+        seen = set()
+        for entry in reversed(storage._load()["temperatures"]):
+            loc = entry["location"]
+            if loc in seen:
+                continue
+            seen.add(loc)
+            w = storage.check_range(loc, entry["celsius"])
+            if w:
+                bad.append(w)
+        if bad:
+            await session.say("Warning. " + ". ".join(bad) + ".")
+        else:
+            await session.say("All temperatures within safe range.")
+
+    async def inject_test_reading(location: str, severity: str):
+        # find what counts as low / ok / high for this location and log it.
+        rng = storage.TEMP_RANGES.get(location.lower())
+        if not rng:
+            return
+        low, high = rng
+        if severity == "low":
+            value = low - 5
+        elif severity == "high":
+            value = high + 5
+        else:
+            value = (low + high) / 2
+        storage.add_temperature(location, value)
+        assistant._emit_state()
+
+    def _on_data(data_packet):
+        try:
+            payload = json.loads(data_packet.data.decode())
+        except Exception:
+            return
+        t = payload.get("type")
+        if t == "check_temps":
+            asyncio.create_task(run_safety_check())
+        elif t == "inject_temp":
+            asyncio.create_task(
+                inject_test_reading(payload.get("location", ""), payload.get("severity", "ok"))
+            )
+
+    ctx.room.on("data_received", _on_data)
+
 
 if __name__ == "__main__":
     cli.run_app(
