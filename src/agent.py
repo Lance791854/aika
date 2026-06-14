@@ -13,7 +13,7 @@ from livekit.agents import (
     cli,
     function_tool,
 )
-from livekit.plugins import deepgram, groq, cartesia, silero
+from livekit.plugins import cartesia, deepgram, groq, silero
 
 logger = logging.getLogger("agent")
 

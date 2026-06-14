@@ -14,7 +14,11 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     function_tool,
+)
+from livekit.agents import (
     stt as livekit_stt,
+)
+from livekit.agents import (
     tts as livekit_tts,
 )
 from livekit.agents.llm import StopResponse
@@ -42,7 +46,7 @@ SPEACHES_URL = "http://localhost:8000/v1"
 # gemma3:12b-it-qat (smarter but ~1.6 tok/s — too slow for voice on CPU).
 # Set True to skip LLM + TTS — only log STT comparison results. Lets you
 # rapid-fire utterances to compare STT models without waiting for replies.
-STT_ONLY_MODE = True
+STT_ONLY_MODE = False
 
 LLM_MODEL = "aika-llm"
 # faster-whisper-large-v3 (multilingual, full size). Slow on CPU (~10-15s
@@ -281,7 +285,7 @@ async def entrypoint(ctx: JobContext):
     # Warm the LLM immediately + start a background keepalive ping every 4min.
     # Without this, an idle box will hit cold-start (~6s) on the first user
     # utterance. With it, the LLM stays in Ollama's RAM the whole session.
-    warm_task = asyncio.create_task(_warm_llm_once())
+    asyncio.create_task(_warm_llm_once())
     asyncio.create_task(_keep_llm_warm_loop())
 
     # LiveKit's default APIConnectOptions.timeout is 10s — too tight for CPU
@@ -336,6 +340,8 @@ async def entrypoint(ctx: JobContext):
         ),
         stt=CompareSTT([
             # First listed = primary (result used by agent). Add/remove freely.
+            # voxtral assumes you're running it locally (e.g. via vLLM) on :8001 —
+            # remove this entry if you don't have it set up.
             ("voxtral-3b (GPU)", openai.STT(
                 base_url="http://localhost:8001/v1", api_key="local", language="en",
                 model="mistralai/Voxtral-Mini-3B-2507")),

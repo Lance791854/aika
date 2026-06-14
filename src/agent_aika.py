@@ -16,7 +16,6 @@ import time
 
 import httpx
 from dotenv import load_dotenv
-from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -27,13 +26,14 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     function_tool,
+)
+from livekit.agents import (
     tts as livekit_tts,
 )
 from livekit.agents.llm import StopResponse
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 from livekit.agents.voice.agent_session import SessionConnectOptions
-from livekit.agents.voice.room_io import RoomInputOptions
-from livekit.plugins import cartesia, deepgram, groq, noise_cancellation, openai, silero
+from livekit.plugins import cartesia, deepgram, groq, openai, silero
 
 import storage
 
