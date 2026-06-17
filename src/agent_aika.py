@@ -111,7 +111,7 @@ class _SpeachesTTSStream(livekit_tts.ChunkedStream):
         )
         CHUNK = 4096
         for i in range(0, len(data), CHUNK):
-            output_emitter.push(data[i:i + CHUNK])
+            output_emitter.push(data[i : i + CHUNK])
         output_emitter.flush()
 
 
@@ -131,7 +131,11 @@ def build_stt(choice: str):
             language="en",
         )
     logger.info("stt: cloud (Deepgram nova-3)")
-    return deepgram.STT(model="nova-3", language="multi")
+    # keyterm prompting stops nova-3 from dropping the unfamiliar name "AIKA"
+    # (esp. as the first word of an utterance). It's nova-3 + English only, so
+    # we pin language="en" — fine for the kitchen demo. Drop keyterm and switch
+    # back to "multi" if multilingual recognition is ever needed.
+    return deepgram.STT(model="nova-3", language="en", keyterm=["AIKA", "Aika"])
 
 
 def build_llm(choice: str):
@@ -175,9 +179,16 @@ class Assistant(Agent):
     # depending on accent, so we include common phonetic neighbours seen in
     # both Deepgram and Whisper outputs. Compared lowercase.
     WAKE_WORDS = (
-        "aika", "ika", "ayka", "ica",       # the basics
-        "alka", "alika", "iika",              # Deepgram variants
-        "aica", "aiko", "ayko",              # ending-vowel variants
+        "aika",
+        "ika",
+        "ayka",
+        "ica",  # the basics
+        "alka",
+        "alika",
+        "iika",  # Deepgram variants
+        "aica",
+        "aiko",
+        "ayko",  # ending-vowel variants
     )
     # How long AIKA stays "awake" after a wake word in `window` mode. Lets the
     # user say "AIKA" once and then chat normally — works around STT dropping
@@ -213,19 +224,24 @@ class Assistant(Agent):
     def _emit_state(self) -> None:
         temps = []
         for t in storage.recent_temperatures(5):
-            temps.append({
-                **t,
-                "out_of_range": storage.check_range(t["location"], t["celsius"]) is not None,
-            })
-        self._publish({
-            "type": "state",
-            "timers": [
-                {"name": n, "end_time": t["end_time"]}
-                for n, t in self.timers.items()
-            ],
-            "temperatures": temps,
-            "notes": storage.recent_notes(5),
-        })
+            temps.append(
+                {
+                    **t,
+                    "out_of_range": storage.check_range(t["location"], t["celsius"])
+                    is not None,
+                }
+            )
+        self._publish(
+            {
+                "type": "state",
+                "timers": [
+                    {"name": n, "end_time": t["end_time"]}
+                    for n, t in self.timers.items()
+                ],
+                "temperatures": temps,
+                "notes": storage.recent_notes(5),
+            }
+        )
 
     async def on_user_turn_completed(self, chat_ctx, new_message):
         if self._wake_mode == "off":
@@ -236,7 +252,10 @@ class Assistant(Agent):
         if heard_wake:
             self._last_wake_at = now
             return
-        if self._wake_mode == "window" and (now - self._last_wake_at) < self.WAKE_WINDOW_SEC:
+        if (
+            self._wake_mode == "window"
+            and (now - self._last_wake_at) < self.WAKE_WINDOW_SEC
+        ):
             return
         logger.info(f"wake gate ({self._wake_mode}) skipping reply for {text!r}")
         raise StopResponse()
@@ -417,9 +436,15 @@ async def entrypoint(ctx: JobContext):
     }
     if has_local:
         session_kwargs["conn_options"] = SessionConnectOptions(
-            stt_conn_options=long if stt_choice == "local" else DEFAULT_API_CONNECT_OPTIONS,
-            llm_conn_options=long if llm_choice == "local" else DEFAULT_API_CONNECT_OPTIONS,
-            tts_conn_options=long if tts_choice == "local" else DEFAULT_API_CONNECT_OPTIONS,
+            stt_conn_options=long
+            if stt_choice == "local"
+            else DEFAULT_API_CONNECT_OPTIONS,
+            llm_conn_options=long
+            if llm_choice == "local"
+            else DEFAULT_API_CONNECT_OPTIONS,
+            tts_conn_options=long
+            if tts_choice == "local"
+            else DEFAULT_API_CONNECT_OPTIONS,
         )
 
     session = AgentSession(**session_kwargs)
@@ -429,6 +454,7 @@ async def entrypoint(ctx: JobContext):
     # reply text, timings). Frontend filters by topic="aika-debug".
     def _publish(payload: dict) -> None:
         payload["at"] = time.time()
+
         async def _send():
             try:
                 await ctx.room.local_participant.publish_data(
@@ -438,23 +464,43 @@ async def entrypoint(ctx: JobContext):
                 )
             except Exception as e:
                 logger.warning(f"publish_data failed: {e}")
+
         asyncio.create_task(_send())
 
     def _on_metrics(ev):
         m = ev.metrics
         t = m.type
         if t == "stt_metrics":
-            _publish({"type": "stt_metrics", "duration": m.duration,
-                      "audio_duration": m.audio_duration})
+            _publish(
+                {
+                    "type": "stt_metrics",
+                    "duration": m.duration,
+                    "audio_duration": m.audio_duration,
+                }
+            )
         elif t == "eou_metrics":
-            _publish({"type": "eou_metrics", "transcription_delay": m.transcription_delay})
+            _publish(
+                {"type": "eou_metrics", "transcription_delay": m.transcription_delay}
+            )
         elif t == "llm_metrics":
-            _publish({"type": "llm_metrics", "duration": m.duration,
-                      "ttft": m.ttft, "tokens": m.completion_tokens,
-                      "tok_per_sec": m.tokens_per_second})
+            _publish(
+                {
+                    "type": "llm_metrics",
+                    "duration": m.duration,
+                    "ttft": m.ttft,
+                    "tokens": m.completion_tokens,
+                    "tok_per_sec": m.tokens_per_second,
+                }
+            )
         elif t == "tts_metrics":
-            _publish({"type": "tts_metrics", "duration": m.duration,
-                      "ttfb": m.ttfb, "chars": m.characters_count})
+            _publish(
+                {
+                    "type": "tts_metrics",
+                    "duration": m.duration,
+                    "ttfb": m.ttfb,
+                    "chars": m.characters_count,
+                }
+            )
 
     def _on_user_transcribed(ev):
         if ev.is_final:
@@ -484,8 +530,7 @@ async def entrypoint(ctx: JobContext):
     session.on("function_tools_executed", _on_tools_executed)
 
     # Publish stack on join so the overlay can show what's active.
-    _publish({"type": "stack", "stt": stt_choice, "llm": llm_choice,
-              "tts": tts_choice})
+    _publish({"type": "stack", "stt": stt_choice, "llm": llm_choice, "tts": tts_choice})
 
     assistant = Assistant(wake_mode=wake_mode, publish_fn=_publish)
     await session.start(agent=assistant, room=ctx.room)
@@ -534,7 +579,9 @@ async def entrypoint(ctx: JobContext):
             asyncio.create_task(run_safety_check())
         elif t == "inject_temp":
             asyncio.create_task(
-                inject_test_reading(payload.get("location", ""), payload.get("severity", "ok"))
+                inject_test_reading(
+                    payload.get("location", ""), payload.get("severity", "ok")
+                )
             )
 
     ctx.room.on("data_received", _on_data)
