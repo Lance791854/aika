@@ -10,7 +10,7 @@ speaks back unprompted when something needs attention.
 - **Timers** — `"AIKA, steak four minutes"` / `"how long for steak"` / `"cancel steak timer"`
 - **Temperatures** — `"log the freezer at minus eighteen"` / `"what was the freezer at"`. Readings outside [FSANZ](https://www.foodstandards.gov.au/) safe ranges (freezer below -18, fridge 0-5, cooked poultry above 75, etc.) trigger an immediate warning.
 - **Notes** — `"make a note we're out of butter"` / `"what notes do we have"` / `"what are we out of"`
-- **Wake modes** — always / after `"AIKA"` (30s window) / each command must include `"AIKA"`
+- **Wake modes** — always reply / only reply when addressed by name (`"AIKA ..."` or `"hey AIKA ..."`)
 - **Status panel** — fixed side panel during the call. Running timers with countdown, latest temperature per location, latest notes. Out-of-range temps go red. Includes a button to run a safety check (AIKA scans recent readings and speaks any warnings), plus per-card buttons to inject fake low/ok/high readings for testing the alerts.
 - **Debug overlay** — per-turn STT / LLM / TTS timings, transcripts, tool calls
 - **Per-call stack toggle** — pick cloud or self-hosted for each of STT / LLM / TTS independently. Defaults to cloud. Choices ride in the agent dispatch metadata.

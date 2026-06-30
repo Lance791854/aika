@@ -130,16 +130,10 @@ export const WelcomeView = ({
                     desc: 'AIKA replies to every utterance, even side conversations.',
                   },
                   {
-                    mode: 'window' as WakeMode,
+                    mode: 'strict' as WakeMode,
                     label: 'After "AIKA"',
                     desc:
-                      'Say "AIKA" once. AIKA stays awake and listens for 30 seconds after each reply.',
-                  },
-                  {
-                    mode: 'strict' as WakeMode,
-                    label: 'Each command',
-                    desc:
-                      'Every command must start with "AIKA". Otherwise AIKA stays silent.',
+                      'Only replies when you address it by name, like "AIKA ..." or "hey AIKA ...". Otherwise it stays silent.',
                   },
                 ] as const
               ).map(({ mode, label }) => {
@@ -163,9 +157,7 @@ export const WelcomeView = ({
             <p className="text-muted-foreground mt-1.5 text-[10px] leading-snug text-center">
               {wake === 'off'
                 ? 'AIKA replies to every utterance, even side conversations.'
-                : wake === 'window'
-                  ? 'Say "AIKA" once. AIKA stays awake for 30 seconds after each reply.'
-                  : 'Every command must start with "AIKA". Otherwise AIKA stays silent.'}
+                : 'Only replies when you address it by name, like "AIKA ..." or "hey AIKA ...". Otherwise it stays silent.'}
             </p>
           </div>
           <button

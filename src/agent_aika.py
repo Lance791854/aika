@@ -12,6 +12,7 @@ with side-by-side STT comparison.
 import asyncio
 import json
 import logging
+import re
 import time
 
 import httpx
@@ -173,11 +174,9 @@ def build_tts(choice: str):
 # both deployment modes.
 # ---------------------------------------------------------------------------
 class Assistant(Agent):
-    WAKE_WINDOW_SEC = 30
-
     # Words that count as "addressing AIKA" — STTs often mishear the name
     # depending on accent, so we include common phonetic neighbours seen in
-    # both Deepgram and Whisper outputs. Compared lowercase.
+    # both Deepgram and Whisper outputs.
     WAKE_WORDS = (
         "aika",
         "ika",
@@ -190,10 +189,10 @@ class Assistant(Agent):
         "aiko",
         "ayko",  # ending-vowel variants
     )
-    # How long AIKA stays "awake" after a wake word in `window` mode. Lets the
-    # user say "AIKA" once and then chat normally — works around STT dropping
-    # the wake word on follow-up utterances.
-    WAKE_WINDOW_SEC = 30.0
+    # Match as whole words only. Substring matching let fragments like "ica"
+    # and "ika" fire on ordinary speech — "basically", "medical", "paprika",
+    # "America" — so the gate woke on side conversation and replied anyway.
+    WAKE_RE = re.compile(r"\b(?:" + "|".join(WAKE_WORDS) + r")\b")
 
     def __init__(self, wake_mode: str = "off", publish_fn=None) -> None:
         super().__init__(
@@ -219,7 +218,6 @@ class Assistant(Agent):
         self.timers: dict = {}
         self._wake_mode = wake_mode
         self._publish = publish_fn or (lambda p: None)
-        self._last_wake_at: float = 0
 
     def _emit_state(self) -> None:
         temps = []
@@ -244,20 +242,14 @@ class Assistant(Agent):
         )
 
     async def on_user_turn_completed(self, chat_ctx, new_message):
+        # "off" replies to everything; "strict" only replies to utterances that
+        # address AIKA by name (e.g. "AIKA ..." or "hey AIKA ...").
         if self._wake_mode == "off":
             return
         text = (new_message.text_content or "").lower()
-        heard_wake = any(w in text for w in self.WAKE_WORDS)
-        now = time.time()
-        if heard_wake:
-            self._last_wake_at = now
+        if self.WAKE_RE.search(text):
             return
-        if (
-            self._wake_mode == "window"
-            and (now - self._last_wake_at) < self.WAKE_WINDOW_SEC
-        ):
-            return
-        logger.info(f"wake gate ({self._wake_mode}) skipping reply for {text!r}")
+        logger.info(f"wake gate skipping reply for {text!r}")
         raise StopResponse()
 
     @function_tool
@@ -409,10 +401,13 @@ async def entrypoint(ctx: JobContext):
     stt_choice = choices.get("stt", "cloud")
     llm_choice = choices.get("llm", "cloud")
     tts_choice = choices.get("tts", "cloud")
-    # wake mode: "off" (always respond), "window" (wake once, awake 30s),
-    # or "strict" (every utterance needs the wake word).
+    # wake mode: "off" (always respond) or "strict" (only respond when the
+    # utterance addresses AIKA by name). "window" is the old 3-mode frontend's
+    # value — fold it into strict so a not-yet-updated frontend still gates.
     wake_mode = str(choices.get("wake", "off"))
-    if wake_mode not in ("off", "window", "strict"):
+    if wake_mode == "window":
+        wake_mode = "strict"
+    if wake_mode not in ("off", "strict"):
         wake_mode = "off"
     logger.info(
         f"📋 stack stt={stt_choice} llm={llm_choice} tts={tts_choice}"
