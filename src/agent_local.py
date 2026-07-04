@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 
 import httpx
@@ -34,9 +35,12 @@ load_dotenv(".env.local")
 
 
 # Self-hosted endpoints reached over the SSH tunnel:
-#   ssh -L 11434:localhost:11434 -L 8000:localhost:8000 -N debian@<inference-host>
+#   ssh -L 11434:localhost:11434 -L 8000:localhost:8000 -L 9000:localhost:9000 -N debian@<inference-host>
 OLLAMA_URL = "http://localhost:11434/v1"
 SPEACHES_URL = "http://localhost:8000/v1"
+# Parakeet wrapper (see inference/parakeet/). Override with the RunPod
+# host:port via env when testing against the GPU pod directly.
+PARAKEET_URL = os.getenv("PARAKEET_STT_URL", "http://localhost:9000/v1")
 
 # "aika-llm" is a custom Ollama model variant created on the inference server:
 #   FROM qwen2.5:7b
@@ -340,6 +344,12 @@ async def entrypoint(ctx: JobContext):
         ),
         stt=CompareSTT([
             # First listed = primary (result used by agent). Add/remove freely.
+            # parakeet-tdt is the self-hosting target — English, accent-robust,
+            # served by inference/parakeet/ on the GPU pod. Set PARAKEET_STT_URL
+            # to the RunPod host:port (or tunnel :9000) before running.
+            ("parakeet-tdt (GPU)", openai.STT(
+                base_url=PARAKEET_URL, api_key="parakeet", language="en",
+                model="nvidia/parakeet-tdt-0.6b-v2")),
             # voxtral assumes you're running it locally (e.g. via vLLM) on :8001 —
             # remove this entry if you don't have it set up.
             ("voxtral-3b (GPU)", openai.STT(

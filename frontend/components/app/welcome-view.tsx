@@ -28,6 +28,8 @@ interface WelcomeViewProps {
   setDebug: (v: boolean) => void;
   wake: WakeMode;
   setWake: (v: WakeMode) => void;
+  compare: boolean;
+  setCompare: (v: boolean) => void;
 }
 
 interface StackPickerRowProps {
@@ -35,6 +37,7 @@ interface StackPickerRowProps {
   value: StackChoice;
   cloudLabel: string;
   localLabel: string;
+  gpuLabel?: string;
   onChange: (v: StackChoice) => void;
 }
 
@@ -43,6 +46,7 @@ const StackPickerRow = ({
   value,
   cloudLabel,
   localLabel,
+  gpuLabel,
   onChange,
 }: StackPickerRowProps) => {
   const baseBtn =
@@ -69,6 +73,15 @@ const StackPickerRow = ({
         >
           {localLabel}
         </button>
+        {gpuLabel && (
+          <button
+            type="button"
+            onClick={() => onChange('gpu')}
+            className={`${baseBtn} ${value === 'gpu' ? active : inactive}`}
+          >
+            {gpuLabel}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -83,6 +96,8 @@ export const WelcomeView = ({
   setDebug,
   wake,
   setWake,
+  compare,
+  setCompare,
   ref,
 }: React.ComponentProps<'div'> & WelcomeViewProps) => {
   return (
@@ -98,6 +113,7 @@ export const WelcomeView = ({
             value={stack.stt}
             cloudLabel="Deepgram nova-3"
             localLabel="Whisper medium"
+            gpuLabel="Parakeet GPU"
             onChange={(v) => setStack({ ...stack, stt: v })}
           />
           <StackPickerRow
@@ -171,6 +187,19 @@ export const WelcomeView = ({
           >
             Debug overlay: {debug ? 'on' : 'off'}
           </button>
+          {debug && (
+            <button
+              type="button"
+              onClick={() => setCompare(!compare)}
+              className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
+                compare
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/70'
+              }`}
+            >
+              Compare STT (Parakeet vs Deepgram): {compare ? 'on' : 'off'}
+            </button>
+          )}
         </div>
 
         <Button

@@ -1,14 +1,28 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDataChannel } from '@livekit/components-react';
 
-type AikaEvent =
+type ActiveTimer = { name: string; end_time: number };
+type TempEntry = {
+  location: string;
+  celsius: number;
+  at: number;
+  out_of_range?: boolean;
+};
+type NoteEntry = { text: string; at: number };
+
+type TurnEvent =
   | { type: 'stack'; at: number; stt: string; llm: string; tts: string }
   | { type: 'user_text'; at: number; text: string }
   | { type: 'assistant_text'; at: number; text: string }
   | { type: 'tool_call'; at: number; name: string; args: unknown }
   | { type: 'stt_metrics'; at: number; duration: number; audio_duration: number }
+  | {
+      type: 'stt_compare';
+      at: number;
+      results: { label: string; text: string; ms: number }[];
+    }
   | { type: 'eou_metrics'; at: number; transcription_delay: number }
   | {
       type: 'llm_metrics';
@@ -20,12 +34,22 @@ type AikaEvent =
     }
   | { type: 'tts_metrics'; at: number; duration: number; ttfb: number; chars: number };
 
+type StateEvent = {
+  type: 'state';
+  timers: ActiveTimer[];
+  temperatures: TempEntry[];
+  notes: NoteEntry[];
+};
+
+type AikaEvent = TurnEvent | StateEvent;
+
 interface Turn {
   index: number;
   startedAt: number;
   userText?: string;
   assistantText?: string;
   toolCalls: { name: string; args: unknown }[];
+  compare?: { label: string; text: string; ms: number }[];
   sttSec?: number;
   eouSec?: number;
   llmSec?: number;
@@ -43,17 +67,26 @@ function s(n: number | undefined, digits = 2) {
 
 /** Group a flat event log into per-turn objects. A new turn starts on each
  *  user_text event; later events go into the most recent turn. */
-function groupTurns(events: AikaEvent[]): Turn[] {
+function groupTurns(events: TurnEvent[]): Turn[] {
   const turns: Turn[] = [];
   let current: Turn | null = null;
+  // stt_compare is published just before the user_text it belongs to, so buffer
+  // it and attach to the turn that the next user_text opens.
+  let pendingCompare: Turn['compare'];
   for (const ev of events) {
+    if (ev.type === 'stt_compare') {
+      pendingCompare = ev.results;
+      continue;
+    }
     if (ev.type === 'user_text') {
       current = {
         index: turns.length + 1,
         startedAt: ev.at,
         userText: ev.text,
         toolCalls: [],
+        compare: pendingCompare,
       };
+      pendingCompare = undefined;
       turns.push(current);
       continue;
     }
@@ -112,6 +145,20 @@ function TurnCard({ turn }: { turn: Turn }) {
           <span className="text-muted-foreground">user:</span> {turn.userText}
         </div>
       )}
+      {turn.compare && (
+        <div className="bg-muted/40 mb-1 rounded p-1">
+          <div className="text-muted-foreground mb-0.5 text-[9px] uppercase tracking-wider">
+            stt compare
+          </div>
+          {turn.compare.map((r, i) => (
+            <div key={i} className="flex gap-1">
+              <span className="text-muted-foreground w-16 shrink-0">{r.label}</span>
+              <span className="flex-1 break-words">{r.text}</span>
+              <span className="text-muted-foreground shrink-0">{r.ms}ms</span>
+            </div>
+          ))}
+        </div>
+      )}
       {turn.toolCalls.map((tc, i) => (
         <div key={i} className="text-foreground/80 mb-0.5">
           <span className="text-muted-foreground">tool:</span> {tc.name}(
@@ -146,14 +193,24 @@ function TurnCard({ turn }: { turn: Turn }) {
   );
 }
 
+function fmtRemaining(seconds: number): string {
+  if (seconds <= 0) return 'done';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 export function DebugOverlay() {
-  const [events, setEvents] = useState<AikaEvent[]>([]);
+  const [events, setEvents] = useState<TurnEvent[]>([]);
 
   useDataChannel('aika-debug', (msg) => {
     try {
       const text = new TextDecoder().decode(msg.payload);
       const parsed = JSON.parse(text) as AikaEvent;
-      setEvents((prev) => [...prev.slice(-99), parsed]);
+      // state events are owned by LiveStatePanel — debug overlay only cares
+      // about per-turn metrics and transcripts.
+      if (parsed.type === 'state') return;
+      setEvents((prev) => [...prev.slice(-99), parsed as TurnEvent]);
     } catch {
       // ignore
     }
@@ -181,11 +238,11 @@ export function DebugOverlay() {
         )}
       </div>
       {turns.length === 0 ? (
-        <div className="text-muted-foreground text-center text-[10px]">
+        <div className="text-muted-foreground mt-2 text-center text-[10px]">
           waiting for first turn...
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="mt-2 flex flex-col gap-2">
           {turns.map((t) => (
             <TurnCard key={t.index} turn={t} />
           ))}

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { AccessToken, type AccessTokenOptions, type VideoGrant } from 'livekit-server-sdk';
 import { RoomAgentDispatch, RoomConfiguration } from '@livekit/protocol';
 
-type StackChoice = 'cloud' | 'local';
+type StackChoice = 'cloud' | 'local' | 'gpu';
 type Stack = { stt?: StackChoice; llm?: StackChoice; tts?: StackChoice };
 
 type ConnectionDetails = {
@@ -49,18 +49,20 @@ export async function POST(req: Request) {
       roomConfig = RoomConfiguration.fromJson(body.room_config, {
         ignoreUnknownFields: true,
       });
-    } else if (body?.stack || body?.wake !== undefined) {
+    } else if (body?.stack || body?.wake !== undefined || body?.compare !== undefined) {
       // Frontend dropdown choices — wrap them as agent dispatch metadata so
       // they reach `ctx.job.metadata` in the Python worker. Only forward
-      // valid {cloud|local} values; anything else falls back to defaults.
-      const valid = (v: unknown): v is StackChoice => v === 'cloud' || v === 'local';
+      // valid {cloud|local|gpu} values; anything else falls back to defaults.
+      const valid = (v: unknown): v is StackChoice =>
+        v === 'cloud' || v === 'local' || v === 'gpu';
       const validWake = (v: unknown): v is 'off' | 'strict' =>
         v === 'off' || v === 'strict';
-      const meta: Stack & { wake?: string } = {};
+      const meta: Stack & { wake?: string; compare?: boolean } = {};
       if (valid(body.stack?.stt)) meta.stt = body.stack.stt;
       if (valid(body.stack?.llm)) meta.llm = body.stack.llm;
       if (valid(body.stack?.tts)) meta.tts = body.stack.tts;
       if (validWake(body.wake)) meta.wake = body.wake;
+      if (typeof body.compare === 'boolean') meta.compare = body.compare;
       roomConfig = new RoomConfiguration({
         agents: [new RoomAgentDispatch({ metadata: JSON.stringify(meta) })],
       });

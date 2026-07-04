@@ -1,0 +1,8 @@
+# Parakeet STT wrapper. Torch + CUDA are expected to come from the RunPod
+# base image; everything else is installed on top.
+nemo_toolkit[asr]>=2.0.0
+fastapi>=0.115
+uvicorn[standard]>=0.30
+soundfile>=0.12
+librosa>=0.10
+python-multipart>=0.0.9

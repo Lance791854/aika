@@ -7,6 +7,7 @@ import type { AppConfig } from '@/app-config';
 import { AgentSessionView_01 } from '@/components/agents-ui/blocks/agent-session-view-01';
 import type { Stack, WakeMode } from '@/components/app/app';
 import { DebugOverlay } from '@/components/app/debug-overlay';
+import { LiveStatePanel } from '@/components/app/live-state-panel';
 import { WelcomeView } from '@/components/app/welcome-view';
 
 const MotionWelcomeView = motion.create(WelcomeView);
@@ -38,6 +39,8 @@ interface ViewControllerProps {
   setDebug: (v: boolean) => void;
   wake: WakeMode;
   setWake: (v: WakeMode) => void;
+  compare: boolean;
+  setCompare: (v: boolean) => void;
 }
 
 export function ViewController({
@@ -48,6 +51,8 @@ export function ViewController({
   setDebug,
   wake,
   setWake,
+  compare,
+  setCompare,
 }: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
   const { resolvedTheme } = useTheme();
@@ -67,6 +72,8 @@ export function ViewController({
           setDebug={setDebug}
           wake={wake}
           setWake={setWake}
+          compare={compare}
+          setCompare={setCompare}
         />
       )}
       {/* Session view */}
@@ -94,6 +101,7 @@ export function ViewController({
           className="fixed inset-0"
         />
       )}
+      {isConnected && <LiveStatePanel key="live-state" />}
       {isConnected && debug && <DebugOverlay key="debug-overlay" />}
     </AnimatePresence>
   );

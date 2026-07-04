@@ -12,6 +12,7 @@ with side-by-side STT comparison.
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 
@@ -29,10 +30,14 @@ from livekit.agents import (
     function_tool,
 )
 from livekit.agents import (
+    stt as livekit_stt,
+)
+from livekit.agents import (
     tts as livekit_tts,
 )
 from livekit.agents.llm import StopResponse
-from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
+from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN, NotGivenOr
+from livekit.agents.utils import AudioBuffer
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import cartesia, deepgram, groq, openai, silero
 
@@ -56,6 +61,11 @@ LOCAL_LLM_MODEL = "aika-llm"  # custom variant of qwen2.5:3b with num_thread=8
 LOCAL_STT_MODEL = "Systran/faster-whisper-medium"
 LOCAL_TTS_MODEL = "speaches-ai/Kokoro-82M-v1.0-ONNX"
 LOCAL_TTS_VOICE = "af_bella"
+
+# GPU stack (RunPod). Parakeet STT served by inference/parakeet/ on the pod,
+# reached over the VPS->pod SSH tunnel (pm2 "aika-gpu-tunnel") on localhost:9000.
+GPU_STT_URL = os.getenv("AIKA_GPU_STT_URL", "http://localhost:9000/v1")
+GPU_STT_MODEL = "nvidia/parakeet-tdt-0.6b-v2"
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +133,14 @@ class _SpeachesTTSStream(livekit_tts.ChunkedStream):
 # sends garbage metadata.
 # ---------------------------------------------------------------------------
 def build_stt(choice: str):
+    if choice == "gpu":
+        logger.info(f"stt: gpu ({GPU_STT_MODEL} @ Parakeet/RunPod)")
+        return openai.STT(
+            base_url=GPU_STT_URL,
+            api_key="parakeet",
+            model=GPU_STT_MODEL,
+            language="en",
+        )
     if choice == "local":
         logger.info(f"stt: local ({LOCAL_STT_MODEL} @ Speaches VPS)")
         return openai.STT(
@@ -167,6 +185,60 @@ def build_tts(choice: str):
         )
     logger.info("tts: cloud (Cartesia)")
     return cartesia.TTS(voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+
+
+# ---------------------------------------------------------------------------
+# Compare STT: run several engines on the same audio, publish all transcripts
+# to the debug overlay, and return the first (primary) result for the agent to
+# act on. Used by the debug "compare STT" toggle to eyeball Parakeet vs cloud.
+# ---------------------------------------------------------------------------
+class _CompareSTT(livekit_stt.STT):
+    def __init__(self, engines: list[tuple[str, livekit_stt.STT]], publish) -> None:
+        super().__init__(capabilities=engines[0][1].capabilities)
+        self._engines = engines
+        self._publish = publish
+
+    async def _recognize_impl(
+        self,
+        buffer: AudioBuffer,
+        *,
+        language: NotGivenOr[str] = NOT_GIVEN,
+        conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
+    ):
+        async def safe(engine):
+            t0 = time.time()
+            try:
+                ev = await engine.recognize(
+                    buffer, language=language, conn_options=conn_options
+                )
+                return ev, None, (time.time() - t0) * 1000
+            except Exception as e:
+                return None, e, (time.time() - t0) * 1000
+
+        results = await asyncio.gather(*[safe(eng) for _, eng in self._engines])
+
+        def text_of(ev, err):
+            if err:
+                return f"<err: {type(err).__name__}>"
+            if not ev or not ev.alternatives:
+                return "<empty>"
+            return ev.alternatives[0].text
+
+        self._publish(
+            {
+                "type": "stt_compare",
+                "results": [
+                    {"label": label, "text": text_of(ev, err), "ms": round(ms)}
+                    for (label, _), (ev, err, ms) in zip(self._engines, results)
+                ],
+            }
+        )
+
+        # Return the first engine's result (the primary the agent acts on).
+        for _, (ev, _err, _ms) in zip(self._engines, results):
+            if ev is not None:
+                return ev
+        raise results[0][1]
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +486,37 @@ async def entrypoint(ctx: JobContext):
         f" wake_mode={wake_mode}"
     )
 
+    # Publish events over the LiveKit data channel so the frontend debug
+    # overlay can show what's actually happening (transcripts, tool calls,
+    # reply text, timings). Frontend filters by topic="aika-debug".
+    def _publish(payload: dict) -> None:
+        payload["at"] = time.time()
+
+        async def _send():
+            try:
+                await ctx.room.local_participant.publish_data(
+                    json.dumps(payload).encode(),
+                    topic="aika-debug",
+                    reliable=True,
+                )
+            except Exception as e:
+                logger.warning(f"publish_data failed: {e}")
+
+        asyncio.create_task(_send())
+
+    # Debug "compare STT" toggle: run Parakeet (primary, what the agent acts on)
+    # alongside Deepgram on the same audio and publish both transcripts to the
+    # overlay. Lets you see where Parakeet differs from cloud STT live.
+    compare = bool(choices.get("compare", False))
+    if compare:
+        logger.info("stt: compare (Parakeet primary + Deepgram shadow)")
+        stt_impl = _CompareSTT(
+            [("Parakeet", build_stt("gpu")), ("Deepgram", build_stt("cloud"))],
+            _publish,
+        )
+    else:
+        stt_impl = build_stt(stt_choice)
+
     # Local inference is slow — give the framework a longer timeout for any
     # slot that's pointing at a self-hosted endpoint, otherwise it'll retry
     # mid-generation and pile up parallel CPU work.
@@ -424,7 +527,7 @@ async def entrypoint(ctx: JobContext):
     # the working cloud-only path.
     has_local = "local" in (stt_choice, llm_choice, tts_choice)
     session_kwargs: dict = {
-        "stt": build_stt(stt_choice),
+        "stt": stt_impl,
         "llm": build_llm(llm_choice),
         "tts": build_tts(tts_choice),
         "vad": ctx.proc.userdata["vad"],
@@ -443,24 +546,6 @@ async def entrypoint(ctx: JobContext):
         )
 
     session = AgentSession(**session_kwargs)
-
-    # Publish events over the LiveKit data channel so the frontend debug
-    # overlay can show what's actually happening (transcripts, tool calls,
-    # reply text, timings). Frontend filters by topic="aika-debug".
-    def _publish(payload: dict) -> None:
-        payload["at"] = time.time()
-
-        async def _send():
-            try:
-                await ctx.room.local_participant.publish_data(
-                    json.dumps(payload).encode(),
-                    topic="aika-debug",
-                    reliable=True,
-                )
-            except Exception as e:
-                logger.warning(f"publish_data failed: {e}")
-
-        asyncio.create_task(_send())
 
     def _on_metrics(ev):
         m = ev.metrics

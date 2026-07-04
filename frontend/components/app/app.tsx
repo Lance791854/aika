@@ -13,7 +13,7 @@ import { useAgentErrors } from '@/hooks/useAgentErrors';
 import { useDebugMode } from '@/hooks/useDebug';
 import { getSandboxTokenSource } from '@/lib/utils';
 
-export type StackChoice = 'cloud' | 'local';
+export type StackChoice = 'cloud' | 'local' | 'gpu';
 export type Stack = { stt: StackChoice; llm: StackChoice; tts: StackChoice };
 export type WakeMode = 'off' | 'strict';
 
@@ -36,6 +36,7 @@ export function App({ appConfig }: AppProps) {
   const [stack, setStack] = useState<Stack>(DEFAULT_STACK);
   const [debug, setDebug] = useState<boolean>(false);
   const [wake, setWake] = useState<WakeMode>('off');
+  const [compare, setCompare] = useState<boolean>(false);
 
   // Keep refs to the latest values so the TokenSource callback closure always
   // reads the current dropdown values — useMemo runs once, but the callback
@@ -44,6 +45,8 @@ export function App({ appConfig }: AppProps) {
   stackRef.current = stack;
   const wakeRef = useRef(wake);
   wakeRef.current = wake;
+  const compareRef = useRef(compare);
+  compareRef.current = compare;
 
   const tokenSource = useMemo(() => {
     if (typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string') {
@@ -56,7 +59,11 @@ export function App({ appConfig }: AppProps) {
       const res = await fetch('/api/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stack: stackRef.current, wake: wakeRef.current }),
+        body: JSON.stringify({
+          stack: stackRef.current,
+          wake: wakeRef.current,
+          compare: compareRef.current,
+        }),
       });
       if (!res.ok) throw new Error(`token fetch failed: ${res.status}`);
       return await res.json();
@@ -80,6 +87,8 @@ export function App({ appConfig }: AppProps) {
           setDebug={setDebug}
           wake={wake}
           setWake={setWake}
+          compare={compare}
+          setCompare={setCompare}
         />
       </main>
       <StartAudioButton label="Start Audio" />
