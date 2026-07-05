@@ -49,16 +49,15 @@ const StackPickerRow = ({
   gpuLabel,
   onChange,
 }: StackPickerRowProps) => {
-  const baseBtn =
-    'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors';
+  const baseBtn = 'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors';
   const active = 'bg-foreground text-background';
   const inactive = 'bg-muted text-muted-foreground hover:bg-muted/70';
   return (
     <div className="flex items-center gap-3">
-      <span className="text-muted-foreground w-12 text-left text-xs font-mono uppercase tracking-wider">
+      <span className="text-muted-foreground w-12 text-left font-mono text-xs tracking-wider uppercase">
         {label}
       </span>
-      <div className="flex flex-1 gap-1 rounded-md bg-muted p-1">
+      <div className="bg-muted flex flex-1 gap-1 rounded-md p-1">
         <button
           type="button"
           onClick={() => onChange('cloud')}
@@ -130,14 +129,14 @@ export const WelcomeView = ({
             localLabel="Kokoro 82M"
             onChange={(v) => setStack({ ...stack, tts: v })}
           />
-          <p className="text-muted-foreground mt-1 text-[10px] leading-snug text-center">
+          <p className="text-muted-foreground mt-1 text-center text-[10px] leading-snug">
             Local stack runs on a CPU VPS — expect ~7-12s per turn.
           </p>
           <div className="mt-2">
-            <div className="text-muted-foreground mb-1 text-[10px] uppercase tracking-wider">
+            <div className="text-muted-foreground mb-1 text-[10px] tracking-wider uppercase">
               When should AIKA reply?
             </div>
-            <div className="flex gap-1 rounded-md bg-muted p-1">
+            <div className="bg-muted flex gap-1 rounded-md p-1">
               {(
                 [
                   {
@@ -148,8 +147,7 @@ export const WelcomeView = ({
                   {
                     mode: 'strict' as WakeMode,
                     label: 'After "AIKA"',
-                    desc:
-                      'Only replies when you address it by name, like "AIKA ..." or "hey AIKA ...". Otherwise it stays silent.',
+                    desc: 'Only replies when you address it by name, like "AIKA ..." or "hey AIKA ...". Otherwise it stays silent.',
                   },
                 ] as const
               ).map(({ mode, label }) => {
@@ -170,7 +168,7 @@ export const WelcomeView = ({
                 );
               })}
             </div>
-            <p className="text-muted-foreground mt-1.5 text-[10px] leading-snug text-center">
+            <p className="text-muted-foreground mt-1.5 text-center text-[10px] leading-snug">
               {wake === 'off'
                 ? 'AIKA replies to every utterance, even side conversations.'
                 : 'Only replies when you address it by name, like "AIKA ..." or "hey AIKA ...". Otherwise it stays silent.'}
@@ -210,7 +208,6 @@ export const WelcomeView = ({
           {startButtonText}
         </Button>
       </section>
-
     </div>
   );
 };

@@ -53,10 +53,8 @@ export async function POST(req: Request) {
       // Frontend dropdown choices — wrap them as agent dispatch metadata so
       // they reach `ctx.job.metadata` in the Python worker. Only forward
       // valid {cloud|local|gpu} values; anything else falls back to defaults.
-      const valid = (v: unknown): v is StackChoice =>
-        v === 'cloud' || v === 'local' || v === 'gpu';
-      const validWake = (v: unknown): v is 'off' | 'strict' =>
-        v === 'off' || v === 'strict';
+      const valid = (v: unknown): v is StackChoice => v === 'cloud' || v === 'local' || v === 'gpu';
+      const validWake = (v: unknown): v is 'off' | 'strict' => v === 'off' || v === 'strict';
       const meta: Stack & { wake?: string; compare?: boolean } = {};
       if (valid(body.stack?.stt)) meta.stt = body.stack.stt;
       if (valid(body.stack?.llm)) meta.llm = body.stack.llm;

@@ -136,7 +136,7 @@ function TurnCard({ turn }: { turn: Turn }) {
   const sum = stt + llm + tts || 1;
   return (
     <div className="border-border/60 border-t pt-2 first:border-t-0 first:pt-0">
-      <div className="text-muted-foreground mb-1 flex justify-between text-[10px] uppercase tracking-wider">
+      <div className="text-muted-foreground mb-1 flex justify-between text-[10px] tracking-wider uppercase">
         <span>turn {turn.index}</span>
         <span>total {s(total, 1)}</span>
       </div>
@@ -147,7 +147,7 @@ function TurnCard({ turn }: { turn: Turn }) {
       )}
       {turn.compare && (
         <div className="bg-muted/40 mb-1 rounded p-1">
-          <div className="text-muted-foreground mb-0.5 text-[9px] uppercase tracking-wider">
+          <div className="text-muted-foreground mb-0.5 text-[9px] tracking-wider uppercase">
             stt compare
           </div>
           {turn.compare.map((r, i) => (
@@ -229,7 +229,7 @@ export function DebugOverlay() {
 
   return (
     <div className="bg-background/95 fixed right-4 bottom-4 z-50 max-h-[60vh] w-80 overflow-y-auto rounded-lg border p-3 font-mono text-[11px] leading-snug shadow-lg backdrop-blur">
-      <div className="text-muted-foreground mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider">
+      <div className="text-muted-foreground mb-2 flex items-center justify-between text-[10px] tracking-wider uppercase">
         <span>aika debug</span>
         {stack && (
           <span>

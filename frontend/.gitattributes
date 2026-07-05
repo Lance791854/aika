@@ -1,0 +1,4 @@
+# Force LF line endings for the frontend so the repo builds/lints identically
+# on any OS (prettier/prettier expects LF). Overrides a contributor's
+# core.autocrlf on checkout.
+* text=auto eol=lf

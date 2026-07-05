@@ -31,7 +31,7 @@ function fmtRemaining(seconds: number): string {
 }
 
 function fmtTimeAgo(at: number, now: number): string {
-  const seconds = Math.max(0, Math.floor((now / 1000 - at)));
+  const seconds = Math.max(0, Math.floor(now / 1000 - at));
   if (seconds < 60) return `${seconds}s ago`;
   const m = Math.floor(seconds / 60);
   if (m < 60) return `${m}m ago`;
@@ -48,9 +48,7 @@ function TimerCard({ timer, now }: { timer: ActiveTimer; now: number }) {
   return (
     <div className="bg-card border-border/60 rounded-lg border p-3">
       <div className="flex items-baseline justify-between">
-        <div className="text-foreground truncate text-sm font-medium capitalize">
-          {timer.name}
-        </div>
+        <div className="text-foreground truncate text-sm font-medium capitalize">{timer.name}</div>
         <div
           className={`font-mono text-lg tabular-nums ${
             danger ? 'text-red-500' : 'text-foreground'
@@ -85,9 +83,7 @@ function TempCard({
   return (
     <div
       className={`rounded-md border p-2 ${
-        temp.out_of_range
-          ? 'border-red-500/50 bg-red-500/5'
-          : 'border-border/60 bg-card'
+        temp.out_of_range ? 'border-red-500/50 bg-red-500/5' : 'border-border/60 bg-card'
       }`}
     >
       <div className="flex items-center justify-between">
@@ -95,13 +91,11 @@ function TempCard({
           <div className="text-foreground truncate text-sm font-medium capitalize">
             {temp.location}
           </div>
-          <div className="text-muted-foreground text-[10px]">
-            {fmtTimeAgo(temp.at, now)}
-          </div>
+          <div className="text-muted-foreground text-[10px]">{fmtTimeAgo(temp.at, now)}</div>
         </div>
         <div
           className={`font-mono text-base tabular-nums ${
-            temp.out_of_range ? 'text-red-500 font-bold' : 'text-foreground'
+            temp.out_of_range ? 'font-bold text-red-500' : 'text-foreground'
           }`}
         >
           {display}°C
@@ -142,9 +136,7 @@ function NoteCard({ note, now }: { note: NoteEntry; now: number }) {
   return (
     <div className="bg-card border-border/60 rounded-md border p-2">
       <div className="text-foreground text-sm leading-snug">{note.text}</div>
-      <div className="text-muted-foreground mt-1 text-[10px]">
-        {fmtTimeAgo(note.at, now)}
-      </div>
+      <div className="text-muted-foreground mt-1 text-[10px]">{fmtTimeAgo(note.at, now)}</div>
     </div>
   );
 }
@@ -210,7 +202,7 @@ export function LiveStatePanel() {
 
   const injectTemp = (location: string, severity: 'low' | 'ok' | 'high') => {
     const payload = new TextEncoder().encode(
-      JSON.stringify({ type: 'inject_temp', location, severity }),
+      JSON.stringify({ type: 'inject_temp', location, severity })
     );
     send(payload, { reliable: true });
   };
@@ -261,7 +253,7 @@ export function LiveStatePanel() {
   return (
     <aside className="bg-background/95 border-border fixed top-4 right-4 z-40 flex max-h-[calc(100vh-2rem)] w-72 flex-col overflow-hidden rounded-lg border shadow-md backdrop-blur">
       <header className="border-border/60 flex items-center justify-between border-b px-3 py-2">
-        <h2 className="text-foreground text-xs font-semibold uppercase tracking-wider">
+        <h2 className="text-foreground text-xs font-semibold tracking-wider uppercase">
           AIKA Status
         </h2>
         <button
@@ -279,10 +271,8 @@ export function LiveStatePanel() {
             key={s.key}
             type="button"
             onClick={() => toggleHidden(s.key)}
-            className={`flex-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wider transition-colors ${
-              hidden.has(s.key)
-                ? 'text-muted-foreground bg-muted/40'
-                : 'text-foreground bg-muted'
+            className={`flex-1 rounded-md px-2 py-1 text-[10px] font-medium tracking-wider uppercase transition-colors ${
+              hidden.has(s.key) ? 'text-muted-foreground bg-muted/40' : 'text-foreground bg-muted'
             }`}
             title={hidden.has(s.key) ? `Show ${s.title}` : `Hide ${s.title}`}
           >
@@ -292,14 +282,12 @@ export function LiveStatePanel() {
       </div>
       <div className="overflow-y-auto p-3">
         {sections.filter((s) => !hidden.has(s.key)).length === 0 && (
-          <div className="text-muted-foreground py-4 text-center text-xs">
-            All sections hidden.
-          </div>
+          <div className="text-muted-foreground py-4 text-center text-xs">All sections hidden.</div>
         )}
 
         {!hidden.has('timers') && (
           <section className="mb-4">
-            <h3 className="text-muted-foreground mb-2 text-[10px] font-semibold uppercase tracking-wider">
+            <h3 className="text-muted-foreground mb-2 text-[10px] font-semibold tracking-wider uppercase">
               Timers
             </h3>
             {state.timers.length === 0 ? (
@@ -317,13 +305,13 @@ export function LiveStatePanel() {
         {!hidden.has('temperatures') && (
           <section className="mb-4">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
+              <h3 className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
                 Temperatures
               </h3>
               <button
                 type="button"
                 onClick={runSafetyCheck}
-                className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+                className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
                 title="AIKA scans recent readings and speaks any out-of-range warnings"
               >
                 Run check
@@ -343,7 +331,7 @@ export function LiveStatePanel() {
 
         {!hidden.has('notes') && (
           <section>
-            <h3 className="text-muted-foreground mb-2 text-[10px] font-semibold uppercase tracking-wider">
+            <h3 className="text-muted-foreground mb-2 text-[10px] font-semibold tracking-wider uppercase">
               Notes
             </h3>
             {state.notes.length === 0 ? (
