@@ -8,6 +8,7 @@ import { AgentSessionView_01 } from '@/components/agents-ui/blocks/agent-session
 import type { Stack, WakeMode } from '@/components/app/app';
 import { DebugOverlay } from '@/components/app/debug-overlay';
 import { LiveStatePanel } from '@/components/app/live-state-panel';
+import { NoiseToggle } from '@/components/app/noise-toggle';
 import { WelcomeView } from '@/components/app/welcome-view';
 
 const MotionWelcomeView = motion.create(WelcomeView);
@@ -102,6 +103,7 @@ export function ViewController({
         />
       )}
       {isConnected && <LiveStatePanel key="live-state" />}
+      {isConnected && <NoiseToggle key="noise-toggle" />}
       {isConnected && debug && <DebugOverlay key="debug-overlay" />}
     </AnimatePresence>
   );

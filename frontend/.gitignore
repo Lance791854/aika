@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# kitchen noise test clips, from BBC Sound Effects (RemArc licence)
+/public/restaurant-*.mp3
