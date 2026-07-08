@@ -149,6 +149,15 @@ def build_stt(choice: str):
             model=LOCAL_STT_MODEL,
             language="en",
         )
+    if choice == "cartesia":
+        logger.info("stt: cartesia (ink-whisper)")
+        # Cartesia is cloud-only (hosted). Prefer a dedicated STT key if set,
+        # else fall back to the shared CARTESIA_API_KEY the TTS already uses.
+        return cartesia.STT(
+            model="ink-whisper",
+            language="en",
+            api_key=os.getenv("CARTESIA_STT_API_KEY") or None,
+        )
     logger.info("stt: cloud (Deepgram nova-3)")
     # keyterm prompting stops nova-3 from dropping the unfamiliar name "AIKA"
     # (esp. as the first word of an utterance). It's nova-3 + English only, so

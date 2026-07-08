@@ -13,7 +13,7 @@ import { useAgentErrors } from '@/hooks/useAgentErrors';
 import { useDebugMode } from '@/hooks/useDebug';
 import { getSandboxTokenSource } from '@/lib/utils';
 
-export type StackChoice = 'cloud' | 'local' | 'gpu';
+export type StackChoice = 'cloud' | 'local' | 'gpu' | 'cartesia';
 export type Stack = { stt: StackChoice; llm: StackChoice; tts: StackChoice };
 export type WakeMode = 'off' | 'strict';
 

@@ -38,6 +38,7 @@ interface StackPickerRowProps {
   cloudLabel: string;
   localLabel: string;
   gpuLabel?: string;
+  cartesiaLabel?: string;
   onChange: (v: StackChoice) => void;
 }
 
@@ -47,9 +48,10 @@ const StackPickerRow = ({
   cloudLabel,
   localLabel,
   gpuLabel,
+  cartesiaLabel,
   onChange,
 }: StackPickerRowProps) => {
-  const baseBtn = 'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors';
+  const baseBtn = 'flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors';
   const active = 'bg-foreground text-background';
   const inactive = 'bg-muted text-muted-foreground hover:bg-muted/70';
   return (
@@ -81,6 +83,15 @@ const StackPickerRow = ({
             {gpuLabel}
           </button>
         )}
+        {cartesiaLabel && (
+          <button
+            type="button"
+            onClick={() => onChange('cartesia')}
+            className={`${baseBtn} ${value === 'cartesia' ? active : inactive}`}
+          >
+            {cartesiaLabel}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -110,9 +121,10 @@ export const WelcomeView = ({
           <StackPickerRow
             label="STT"
             value={stack.stt}
-            cloudLabel="Deepgram nova-3"
-            localLabel="Whisper medium"
-            gpuLabel="Parakeet GPU"
+            cloudLabel="Deepgram"
+            localLabel="Whisper"
+            gpuLabel="Parakeet"
+            cartesiaLabel="Cartesia"
             onChange={(v) => setStack({ ...stack, stt: v })}
           />
           <StackPickerRow
