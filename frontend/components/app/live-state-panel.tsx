@@ -11,12 +11,14 @@ type TempEntry = {
   out_of_range?: boolean;
 };
 type NoteEntry = { text: string; at: number };
+type UnhandledEntry = { text: string; at: number };
 
 type StateEvent = {
   type: 'state';
   timers: ActiveTimer[];
   temperatures: TempEntry[];
   notes: NoteEntry[];
+  unhandled: UnhandledEntry[];
 };
 
 function fmtRemaining(seconds: number): string {
@@ -37,6 +39,19 @@ function fmtTimeAgo(at: number, now: number): string {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   return `${h}h ago`;
+}
+
+function DeleteX({ onClick, title }: { onClick: () => void; title: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="text-muted-foreground shrink-0 px-1 text-sm leading-none hover:text-red-500"
+    >
+      ×
+    </button>
+  );
 }
 
 function TimerCard({ timer, now }: { timer: ActiveTimer; now: number }) {
@@ -73,10 +88,12 @@ function TempCard({
   temp,
   now,
   onInject,
+  onDelete,
 }: {
   temp: TempEntry;
   now: number;
   onInject: (location: string, severity: 'low' | 'ok' | 'high') => void;
+  onDelete: () => void;
 }) {
   const c = temp.celsius;
   const display = Number.isInteger(c) ? c : c.toFixed(1);
@@ -93,12 +110,15 @@ function TempCard({
           </div>
           <div className="text-muted-foreground text-[10px]">{fmtTimeAgo(temp.at, now)}</div>
         </div>
-        <div
-          className={`font-mono text-base tabular-nums ${
-            temp.out_of_range ? 'font-bold text-red-500' : 'text-foreground'
-          }`}
-        >
-          {display}°C
+        <div className="flex items-center gap-1">
+          <div
+            className={`font-mono text-base tabular-nums ${
+              temp.out_of_range ? 'font-bold text-red-500' : 'text-foreground'
+            }`}
+          >
+            {display}°C
+          </div>
+          <DeleteX onClick={onDelete} title={`Remove ${temp.location}`} />
         </div>
       </div>
       {/* debug: inject a fake reading at the chosen severity to test alerts */}
@@ -132,17 +152,40 @@ function TempCard({
   );
 }
 
-function NoteCard({ note, now }: { note: NoteEntry; now: number }) {
+function NoteCard({ note, now, onDelete }: { note: NoteEntry; now: number; onDelete: () => void }) {
   return (
     <div className="bg-card border-border/60 rounded-md border p-2">
-      <div className="text-foreground text-sm leading-snug">{note.text}</div>
+      <div className="flex items-start justify-between gap-1">
+        <div className="text-foreground text-sm leading-snug">{note.text}</div>
+        <DeleteX onClick={onDelete} title="Delete note" />
+      </div>
       <div className="text-muted-foreground mt-1 text-[10px]">{fmtTimeAgo(note.at, now)}</div>
     </div>
   );
 }
 
+function UnhandledCard({
+  entry,
+  now,
+  onDelete,
+}: {
+  entry: UnhandledEntry;
+  now: number;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
+      <div className="flex items-start justify-between gap-1">
+        <div className="text-foreground text-sm leading-snug">{entry.text}</div>
+        <DeleteX onClick={onDelete} title="Delete entry" />
+      </div>
+      <div className="text-muted-foreground mt-1 text-[10px]">{fmtTimeAgo(entry.at, now)}</div>
+    </div>
+  );
+}
+
 interface Section {
-  key: 'timers' | 'temperatures' | 'notes';
+  key: 'timers' | 'temperatures' | 'notes' | 'unhandled';
   title: string;
   count: number;
   empty: string;
@@ -153,7 +196,8 @@ export function LiveStatePanel() {
     timers: ActiveTimer[];
     temperatures: TempEntry[];
     notes: NoteEntry[];
-  }>({ timers: [], temperatures: [], notes: [] });
+    unhandled: UnhandledEntry[];
+  }>({ timers: [], temperatures: [], notes: [], unhandled: [] });
   const [collapsed, setCollapsed] = useState(false);
 
   // hidden-section toggles, persisted across tab in localStorage
@@ -188,6 +232,7 @@ export function LiveStatePanel() {
           timers: ev.timers ?? [],
           temperatures: ev.temperatures ?? [],
           notes: ev.notes ?? [],
+          unhandled: ev.unhandled ?? [],
         });
       }
     } catch {
@@ -207,6 +252,16 @@ export function LiveStatePanel() {
     send(payload, { reliable: true });
   };
 
+  const act = (msg: Record<string, unknown>) => {
+    send(new TextEncoder().encode(JSON.stringify(msg)), { reliable: true });
+  };
+  const clearUnhandled = () => act({ type: 'clear_unhandled' });
+  const deleteUnhandled = (at: number) => act({ type: 'delete_unhandled', at });
+  const clearNotes = () => act({ type: 'clear_notes' });
+  const deleteNote = (at: number) => act({ type: 'delete_note', at });
+  const clearTemps = () => act({ type: 'clear_temps' });
+  const deleteTemp = (location: string) => act({ type: 'delete_temp', location });
+
   const sections: Section[] = [
     {
       key: 'timers',
@@ -225,6 +280,12 @@ export function LiveStatePanel() {
       title: 'Notes',
       count: state.notes.length,
       empty: 'No notes yet.',
+    },
+    {
+      key: 'unhandled',
+      title: 'Unhandled',
+      count: state.unhandled.length,
+      empty: 'Nothing unhandled.',
     },
   ];
 
@@ -265,13 +326,13 @@ export function LiveStatePanel() {
           ×
         </button>
       </header>
-      <div className="flex gap-1 border-b px-2 py-1.5">
+      <div className="grid grid-cols-2 gap-1 border-b px-2 py-1.5">
         {sections.map((s) => (
           <button
             key={s.key}
             type="button"
             onClick={() => toggleHidden(s.key)}
-            className={`flex-1 rounded-md px-2 py-1 text-[10px] font-medium tracking-wider uppercase transition-colors ${
+            className={`truncate rounded-md px-2 py-1 text-[10px] font-medium tracking-wider uppercase transition-colors ${
               hidden.has(s.key) ? 'text-muted-foreground bg-muted/40' : 'text-foreground bg-muted'
             }`}
             title={hidden.has(s.key) ? `Show ${s.title}` : `Hide ${s.title}`}
@@ -291,7 +352,9 @@ export function LiveStatePanel() {
               Timers
             </h3>
             {state.timers.length === 0 ? (
-              <p className="text-muted-foreground text-xs">No active timers.</p>
+              <p className="text-muted-foreground text-xs">
+                {'No active timers. Try "steak timer 4 minutes".'}
+              </p>
             ) : (
               <div className="flex flex-col gap-2">
                 {state.timers.map((t) => (
@@ -308,21 +371,41 @@ export function LiveStatePanel() {
               <h3 className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
                 Temperatures
               </h3>
-              <button
-                type="button"
-                onClick={runSafetyCheck}
-                className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
-                title="AIKA scans recent readings and speaks any out-of-range warnings"
-              >
-                Run check
-              </button>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={runSafetyCheck}
+                  className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
+                  title="AIKA scans recent readings and speaks any out-of-range warnings"
+                >
+                  Run check
+                </button>
+                {state.temperatures.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearTemps}
+                    className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
+                    title="Clear all temperature readings"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
             {state.temperatures.length === 0 ? (
-              <p className="text-muted-foreground text-xs">No readings yet.</p>
+              <p className="text-muted-foreground text-xs">
+                {'No readings yet. Try "log the freezer at minus 18".'}
+              </p>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {state.temperatures.map((t, i) => (
-                  <TempCard key={i} temp={t} now={now} onInject={injectTemp} />
+                  <TempCard
+                    key={i}
+                    temp={t}
+                    now={now}
+                    onInject={injectTemp}
+                    onDelete={() => deleteTemp(t.location)}
+                  />
                 ))}
               </div>
             )}
@@ -331,15 +414,65 @@ export function LiveStatePanel() {
 
         {!hidden.has('notes') && (
           <section>
-            <h3 className="text-muted-foreground mb-2 text-[10px] font-semibold tracking-wider uppercase">
-              Notes
-            </h3>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
+                Notes
+              </h3>
+              {state.notes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearNotes}
+                  className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
+                  title="Clear all notes"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
             {state.notes.length === 0 ? (
-              <p className="text-muted-foreground text-xs">No notes yet.</p>
+              <p className="text-muted-foreground text-xs">
+                {'No notes yet. Try "make a note we\'re out of butter".'}
+              </p>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {state.notes.map((n, i) => (
-                  <NoteCard key={i} note={n} now={now} />
+                  <NoteCard key={i} note={n} now={now} onDelete={() => deleteNote(n.at)} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {!hidden.has('unhandled') && (
+          <section className="mt-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
+                Unhandled
+              </h3>
+              {state.unhandled.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearUnhandled}
+                  className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
+                  title="Clear all unhandled requests"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {state.unhandled.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                Nothing unhandled. Requests AIKA can&apos;t do appear here.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {state.unhandled.map((u, i) => (
+                  <UnhandledCard
+                    key={i}
+                    entry={u}
+                    now={now}
+                    onDelete={() => deleteUnhandled(u.at)}
+                  />
                 ))}
               </div>
             )}

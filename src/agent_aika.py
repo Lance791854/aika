@@ -284,6 +284,8 @@ class Assistant(Agent):
             Notes. When a chef says something like "make a note we're out of butter" or "remind the morning shift to defrost the lamb", use the add_note tool. This is for anything they want remembered later — out-of-stock items, handovers, reminders.
             When they ask "what notes do we have", "what are we out of", or "what did I say to do", use the list_notes tool.
 
+            Unhandled requests. If a chef asks you to DO something that is not a timer, temperature, or note — like placing a supplier order, controlling equipment, playing music, or looking up a recipe — call the log_unhandled tool with a short summary of what they asked, then briefly tell them you can't do that. Do NOT call it for greetings, small talk, thanks, or anything you can just answer in conversation.
+
             Keep confirmations brief, like "Timer set. Steak, 4 minutes.", "Logged. Freezer at minus 18.", or "Noted."
             Be helpful but stay out of the way. Chefs are busy.""",
         )
@@ -310,6 +312,7 @@ class Assistant(Agent):
                 ],
                 "temperatures": temps,
                 "notes": storage.recent_notes(5),
+                "unhandled": storage.recent_unhandled(5),
             }
         )
 
@@ -451,6 +454,20 @@ class Assistant(Agent):
             # last few only — chefs don't want a wall of text
             recent = [n["text"] for n in notes[-5:]]
             await context.session.say(". ".join(recent))
+        raise StopResponse()
+
+    @function_tool
+    async def log_unhandled(self, context: RunContext, request: str):
+        """Record a request AIKA can't fulfil (not a timer, temperature, or note),
+        so the coverage gap can be reviewed later.
+
+        Args:
+            request: A short summary of what the chef asked for, like "order more beef" or "turn on the oven"
+        """
+        storage.add_unhandled(request)
+        logger.info(f"unhandled request: {request}")
+        await context.session.say("Sorry, I can't help with that one.")
+        self._emit_state()
         raise StopResponse()
 
 
@@ -663,6 +680,24 @@ async def entrypoint(ctx: JobContext):
                     payload.get("location", ""), payload.get("severity", "ok")
                 )
             )
+        elif t == "clear_unhandled":
+            storage.clear_unhandled()
+            assistant._emit_state()
+        elif t == "delete_unhandled":
+            storage.delete_unhandled(payload.get("at"))
+            assistant._emit_state()
+        elif t == "clear_notes":
+            storage.clear_notes()
+            assistant._emit_state()
+        elif t == "delete_note":
+            storage.delete_note(payload.get("at"))
+            assistant._emit_state()
+        elif t == "clear_temps":
+            storage.clear_temperatures()
+            assistant._emit_state()
+        elif t == "delete_temp":
+            storage.delete_temperature_location(payload.get("location", ""))
+            assistant._emit_state()
 
     ctx.room.on("data_received", _on_data)
 

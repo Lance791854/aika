@@ -42,11 +42,11 @@ def check_range(location: str, celsius: float) -> str | None:
 
 def _load() -> dict:
     if not DATA_PATH.exists():
-        return {"temperatures": [], "notes": []}
+        return {"temperatures": [], "notes": [], "unhandled": []}
     try:
         return json.loads(DATA_PATH.read_text())
     except json.JSONDecodeError:
-        return {"temperatures": [], "notes": []}
+        return {"temperatures": [], "notes": [], "unhandled": []}
 
 
 def _save(data: dict) -> None:
@@ -96,3 +96,54 @@ def recent_temperatures(limit: int = 5) -> list[dict]:
 
 def recent_notes(limit: int = 5) -> list[dict]:
     return list(reversed(_load()["notes"]))[:limit]
+
+
+def add_unhandled(text: str) -> None:
+    """Record a request AIKA couldn't fulfil, for reviewing coverage gaps."""
+    data = _load()
+    data.setdefault("unhandled", []).append({"at": time.time(), "text": text})
+    _save(data)
+
+
+def recent_unhandled(limit: int = 5) -> list[dict]:
+    return list(reversed(_load().get("unhandled", [])))[:limit]
+
+
+def clear_unhandled() -> None:
+    data = _load()
+    data["unhandled"] = []
+    _save(data)
+
+
+def delete_unhandled(at: float) -> None:
+    data = _load()
+    data["unhandled"] = [u for u in data.get("unhandled", []) if u.get("at") != at]
+    _save(data)
+
+
+def delete_note(at: float) -> None:
+    data = _load()
+    data["notes"] = [n for n in data.get("notes", []) if n.get("at") != at]
+    _save(data)
+
+
+def clear_notes() -> None:
+    data = _load()
+    data["notes"] = []
+    _save(data)
+
+
+def delete_temperature_location(location: str) -> None:
+    """Remove every reading for a location — clears its card entirely."""
+    location = location.lower()
+    data = _load()
+    data["temperatures"] = [
+        t for t in data.get("temperatures", []) if t.get("location") != location
+    ]
+    _save(data)
+
+
+def clear_temperatures() -> None:
+    data = _load()
+    data["temperatures"] = []
+    _save(data)
