@@ -130,6 +130,41 @@ def recent_notes(limit: int = 5) -> list[dict]:
     return list(reversed(_load()["notes"]))[:limit]
 
 
+def shift_summary() -> str:
+    """Spoken end-of-shift report: temps (flagging out-of-range), notes, unhandled."""
+    parts = []
+    temps = recent_temperatures(10)
+    if temps:
+        bits = []
+        warnings = []
+        for t in temps:
+            c = t["celsius"]
+            c = int(c) if c == int(c) else c
+            bits.append(f"{t['location']} at {c}")
+            w = check_range(t["location"], t["celsius"])
+            if w:
+                warnings.append(w)
+        s = "Temperatures. " + ", ".join(bits) + "."
+        if warnings:
+            s += " Warning. " + ". ".join(warnings) + "."
+        else:
+            s += " All in range."
+        parts.append(s)
+    else:
+        parts.append("No temperatures logged.")
+    notes = recent_notes(10)
+    if notes:
+        parts.append("Notes. " + ". ".join(n["text"] for n in reversed(notes)) + ".")
+    else:
+        parts.append("No notes.")
+    unhandled = recent_unhandled(10)
+    if unhandled:
+        n = len(unhandled)
+        s = "s" if n != 1 else ""
+        parts.append(f"{n} request{s} I couldn't handle — check the panel.")
+    return " ".join(parts)
+
+
 def add_unhandled(text: str) -> None:
     """Record a request AIKA couldn't fulfil, for reviewing coverage gaps."""
     data = _load()

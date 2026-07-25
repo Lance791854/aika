@@ -297,6 +297,8 @@ class Assistant(Agent):
             Notes. When a chef says something like "make a note we're out of butter" or "remind the morning shift to defrost the lamb", use the add_note tool. This is for anything they want remembered later — out-of-stock items, handovers, messages for other shifts. If they give a specific time delay, that is a reminder, not a note — use set_reminder.
             When they ask "what notes do we have", "what are we out of", or "what did I say to do", use the list_notes tool.
 
+            Shift summary. When a chef asks for "the shift summary", "end of shift report", or "what happened this shift", use the shift_summary tool.
+
             Unhandled requests. If a chef asks you to DO something that is not a timer, temperature, or note — like placing a supplier order, controlling equipment, playing music, or looking up a recipe — call the log_unhandled tool with a short summary of what they asked, then briefly tell them you can't do that. Do NOT call it for greetings, small talk, thanks, or anything you can just answer in conversation.
 
             Keep confirmations brief, like "Timer set. Steak, 4 minutes.", "Logged. Freezer at minus 18.", or "Noted."
@@ -547,6 +549,13 @@ class Assistant(Agent):
             # last few only — chefs don't want a wall of text
             recent = [n["text"] for n in notes[-5:]]
             await context.session.say(". ".join(recent))
+        raise StopResponse()
+
+    @function_tool
+    async def shift_summary(self, context: RunContext):
+        """Read back the end-of-shift summary — temperatures logged, notes, and
+        anything AIKA couldn't handle this shift."""
+        await context.session.say(storage.shift_summary())
         raise StopResponse()
 
     @function_tool
