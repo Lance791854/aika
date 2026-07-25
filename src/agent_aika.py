@@ -280,17 +280,21 @@ class Assistant(Agent):
             instructions="""You are AIKA, an AI Kitchen Assistant helping chefs in a restaurant.
             You respond via voice so keep responses short and clear. No formatting, no emojis.
 
-            You manage timers, temperatures, and notes.
+            You manage timers, reminders, temperatures, and notes.
 
             Timers. When a chef says something like "timer steak 4 minutes" or "pasta 3 minutes", use the set_timer tool.
             When they ask "how long for steak" or "check timers", use the check_timers tool.
             When they say "cancel steak timer", use the cancel_timer tool.
 
+            Reminders. When a chef gives a task WITH a time delay, like "remind me in 20 minutes to rotate the stock", use the set_reminder tool. You will speak the reminder aloud when the time is up.
+            When they ask "what reminders are set", use the check_reminders tool. When they say "cancel the stock reminder", use the cancel_reminder tool.
+            If no time is given — like "remind the morning shift to defrost the lamb" — that is a note, not a reminder. Use add_note and never invent a delay.
+
             Temperatures. When a chef says something like "log the freezer at minus eighteen" or "fridge is four degrees", use the log_temperature tool.
             Locations are things like "freezer", "fridge", "chicken", "lamb". Negative numbers are fine for frozen items.
             When they ask "what was the freezer at" or "check the fridge temperature", use the check_temperature tool.
 
-            Notes. When a chef says something like "make a note we're out of butter" or "remind the morning shift to defrost the lamb", use the add_note tool. This is for anything they want remembered later — out-of-stock items, handovers, reminders.
+            Notes. When a chef says something like "make a note we're out of butter" or "remind the morning shift to defrost the lamb", use the add_note tool. This is for anything they want remembered later — out-of-stock items, handovers, messages for other shifts. If they give a specific time delay, that is a reminder, not a note — use set_reminder.
             When they ask "what notes do we have", "what are we out of", or "what did I say to do", use the list_notes tool.
 
             Unhandled requests. If a chef asks you to DO something that is not a timer, temperature, or note — like placing a supplier order, controlling equipment, playing music, or looking up a recipe — call the log_unhandled tool with a short summary of what they asked, then briefly tell them you can't do that. Do NOT call it for greetings, small talk, thanks, or anything you can just answer in conversation.
@@ -299,6 +303,7 @@ class Assistant(Agent):
             Be helpful but stay out of the way. Chefs are busy.""",
         )
         self.timers: dict = {}
+        self.reminders: dict = {}
         self._wake_mode = wake_mode
         self._publish = publish_fn or (lambda p: None)
 
@@ -318,6 +323,10 @@ class Assistant(Agent):
                 "timers": [
                     {"name": n, "end_time": t["end_time"]}
                     for n, t in self.timers.items()
+                ],
+                "reminders": [
+                    {"text": t, "end_time": r["end_time"]}
+                    for t, r in self.reminders.items()
                 ],
                 "temperatures": temps,
                 "notes": storage.recent_notes(5),
@@ -403,6 +412,81 @@ class Assistant(Agent):
             self._emit_state()
         else:
             await context.session.say(f"No timer for {name}.")
+        raise StopResponse()
+
+    @function_tool
+    async def set_reminder(self, context: RunContext, text: str, minutes: float):
+        """Set a timed reminder that will be spoken aloud when the time is up.
+
+        Only for requests with an explicit delay, like "remind me in 20 minutes".
+        If the chef gave no time, use add_note instead — never guess the minutes.
+
+        Args:
+            text: What to remind about, like "rotate the stock"
+            minutes: How many minutes from now to speak the reminder
+        """
+        key = text.lower()
+        if key in self.reminders:
+            self.reminders[key]["task"].cancel()
+
+        end_time = time.time() + (minutes * 60)
+
+        async def reminder_callback():
+            await asyncio.sleep(minutes * 60)
+            del self.reminders[key]
+            await context.session.say(f"Reminder. {text}.")
+            logger.info(f"Reminder fired: {text}")
+            self._emit_state()
+
+        task = asyncio.create_task(reminder_callback())
+        self.reminders[key] = {"end_time": end_time, "task": task}
+
+        logger.info(f"Reminder set: {text} in {minutes} minutes")
+        self._emit_state()
+        m = int(minutes) if minutes == int(minutes) else minutes
+        unit = "minute" if m == 1 else "minutes"
+        await context.session.say(f"Reminder set, {m} {unit}.")
+        raise StopResponse()
+
+    @function_tool
+    async def check_reminders(self, context: RunContext):
+        """Check all pending reminders and how long until each one."""
+        if not self.reminders:
+            reply = "No reminders set."
+        else:
+            parts = []
+            now = time.time()
+            for text, r in self.reminders.items():
+                remaining = max(0, r["end_time"] - now)
+                if remaining >= 60:
+                    mins = int(remaining // 60)
+                    unit = "minute" if mins == 1 else "minutes"
+                    parts.append(f"{text} in {mins} {unit}")
+                else:
+                    secs = int(remaining)
+                    unit = "second" if secs == 1 else "seconds"
+                    parts.append(f"{text} in {secs} {unit}")
+            reply = "Reminders. " + ". ".join(parts) + "."
+        await context.session.say(reply)
+        raise StopResponse()
+
+    @function_tool
+    async def cancel_reminder(self, context: RunContext, keyword: str):
+        """Cancel a pending reminder that matches a keyword.
+
+        Args:
+            keyword: A word from the reminder to cancel, like "stock"
+        """
+        for text, r in list(self.reminders.items()):
+            if keyword.lower() in text:
+                r["task"].cancel()
+                del self.reminders[text]
+                logger.info(f"Reminder cancelled: {text}")
+                await context.session.say(f"Cancelled the {keyword} reminder.")
+                self._emit_state()
+                break
+        else:
+            await context.session.say(f"No reminder about {keyword}.")
         raise StopResponse()
 
     @function_tool
