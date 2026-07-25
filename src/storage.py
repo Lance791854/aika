@@ -40,6 +40,38 @@ def check_range(location: str, celsius: float) -> str | None:
     return None
 
 
+# seconds before an uncorrected bad reading gets a repeat spoken warning.
+ALERT_COOLDOWN = 300
+
+
+def overdue_temperatures(
+    last_alerted: dict[str, float],
+    now: float | None = None,
+    cooldown: float = ALERT_COOLDOWN,
+) -> list[dict]:
+    """Locations whose latest reading is still out of range and due a re-alert.
+
+    Due means neither the reading itself nor the last alert for that location
+    is fresher than `cooldown` — a corrective reading clears it, a fresh alert
+    postpones it.
+    """
+    now = time.time() if now is None else now
+    seen: set[str] = set()
+    due: list[dict] = []
+    for entry in reversed(_load()["temperatures"]):
+        loc = entry["location"]
+        if loc in seen:
+            continue
+        seen.add(loc)
+        warning = check_range(loc, entry["celsius"])
+        if not warning:
+            continue
+        if now - max(entry["at"], last_alerted.get(loc, 0)) < cooldown:
+            continue
+        due.append({"location": loc, "celsius": entry["celsius"], "warning": warning})
+    return due
+
+
 def _load() -> dict:
     if not DATA_PATH.exists():
         return {"temperatures": [], "notes": [], "unhandled": []}

@@ -710,6 +710,35 @@ async def entrypoint(ctx: JobContext):
 
     ctx.room.on("data_received", _on_data)
 
+    # unattended re-alerting: if a bad reading never gets a corrective one,
+    # AIKA speaks up again on its own every ALERT_COOLDOWN until it does.
+    last_alerted: dict[str, float] = {}
+
+    async def temp_monitor():
+        while True:
+            await asyncio.sleep(30)
+            due = storage.overdue_temperatures(last_alerted)
+            if not due:
+                continue
+            for d in due:
+                last_alerted[d["location"]] = time.time()
+            logger.info(f"re-alerting: {[d['location'] for d in due]}")
+            try:
+                await session.say(
+                    "Warning. "
+                    + ". ".join(d["warning"] for d in due)
+                    + ". Still not corrected."
+                )
+            except RuntimeError:
+                return
+
+    monitor_task = asyncio.create_task(temp_monitor())
+
+    async def _stop_monitor():
+        monitor_task.cancel()
+
+    ctx.add_shutdown_callback(_stop_monitor)
+
 
 if __name__ == "__main__":
     cli.run_app(
