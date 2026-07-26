@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useDataChannel } from '@livekit/components-react';
 
 type ActiveTimer = { name: string; end_time: number };
+type ReminderEntry = { text: string; end_time: number };
 type TempEntry = {
   location: string;
   celsius: number;
@@ -16,6 +17,7 @@ type UnhandledEntry = { text: string; at: number };
 type StateEvent = {
   type: 'state';
   timers: ActiveTimer[];
+  reminders: ReminderEntry[];
   temperatures: TempEntry[];
   notes: NoteEntry[];
   unhandled: UnhandledEntry[];
@@ -79,6 +81,25 @@ function TimerCard({ timer, now }: { timer: ActiveTimer; now: number }) {
           }`}
           style={{ width: `${progress * 100}%` }}
         />
+      </div>
+    </div>
+  );
+}
+
+function ReminderCard({ reminder, now }: { reminder: ReminderEntry; now: number }) {
+  const remaining = reminder.end_time - now / 1000;
+  const danger = remaining < 30 && remaining > 0;
+  return (
+    <div className="bg-card border-border/60 rounded-lg border p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-foreground min-w-0 truncate text-sm">{reminder.text}</div>
+        <div
+          className={`shrink-0 font-mono text-sm tabular-nums ${
+            danger ? 'text-red-500' : 'text-muted-foreground'
+          }`}
+        >
+          in {fmtRemaining(remaining)}
+        </div>
       </div>
     </div>
   );
@@ -185,7 +206,7 @@ function UnhandledCard({
 }
 
 interface Section {
-  key: 'timers' | 'temperatures' | 'notes' | 'unhandled';
+  key: 'timers' | 'reminders' | 'temperatures' | 'notes' | 'unhandled';
   title: string;
   count: number;
   empty: string;
@@ -194,10 +215,11 @@ interface Section {
 export function LiveStatePanel() {
   const [state, setState] = useState<{
     timers: ActiveTimer[];
+    reminders: ReminderEntry[];
     temperatures: TempEntry[];
     notes: NoteEntry[];
     unhandled: UnhandledEntry[];
-  }>({ timers: [], temperatures: [], notes: [], unhandled: [] });
+  }>({ timers: [], reminders: [], temperatures: [], notes: [], unhandled: [] });
   const [collapsed, setCollapsed] = useState(false);
 
   // hidden-section toggles, persisted across tab in localStorage
@@ -230,6 +252,7 @@ export function LiveStatePanel() {
         const ev = parsed as StateEvent;
         setState({
           timers: ev.timers ?? [],
+          reminders: ev.reminders ?? [],
           temperatures: ev.temperatures ?? [],
           notes: ev.notes ?? [],
           unhandled: ev.unhandled ?? [],
@@ -268,6 +291,12 @@ export function LiveStatePanel() {
       title: 'Timers',
       count: state.timers.length,
       empty: 'No active timers.',
+    },
+    {
+      key: 'reminders',
+      title: 'Reminders',
+      count: state.reminders.length,
+      empty: 'No reminders set.',
     },
     {
       key: 'temperatures',
@@ -359,6 +388,25 @@ export function LiveStatePanel() {
               <div className="flex flex-col gap-2">
                 {state.timers.map((t) => (
                   <TimerCard key={t.name} timer={t} now={now} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {!hidden.has('reminders') && (
+          <section className="mb-4">
+            <h3 className="text-muted-foreground mb-2 text-[10px] font-semibold tracking-wider uppercase">
+              Reminders
+            </h3>
+            {state.reminders.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                {'No reminders set. Try "remind me in 20 minutes to rotate the stock".'}
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {state.reminders.map((r, i) => (
+                  <ReminderCard key={i} reminder={r} now={now} />
                 ))}
               </div>
             )}
