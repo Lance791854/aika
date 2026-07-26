@@ -58,6 +58,49 @@ async def test_strict_silent_without_wake_word() -> None:
 
 
 @pytest.mark.asyncio
+async def test_bare_wake_opens_window_for_next_turn() -> None:
+    """Chefs naturally say "AIKA" then pause — the command lands in a second
+    turn with no wake word. A bare address must open the gate for it."""
+    a = agent_aika.Assistant(wake_mode="strict")
+    assert await _replies(a, "AIKA.")
+    assert await _replies(a, "how long for the steak")
+
+
+@pytest.mark.asyncio
+async def test_hey_aika_alone_also_opens_window() -> None:
+    a = agent_aika.Assistant(wake_mode="strict")
+    assert await _replies(a, "hey AIKA")
+    assert await _replies(a, "set a steak timer four minutes")
+
+
+@pytest.mark.asyncio
+async def test_window_is_one_turn_only() -> None:
+    a = agent_aika.Assistant(wake_mode="strict")
+    assert await _replies(a, "AIKA.")
+    assert await _replies(a, "set a steak timer four minutes")
+    assert not await _replies(a, "pass the salt")
+
+
+@pytest.mark.asyncio
+async def test_window_expires(monkeypatch) -> None:
+    a = agent_aika.Assistant(wake_mode="strict")
+    t = {"now": 1000.0}
+    monkeypatch.setattr(agent_aika.time, "time", lambda: t["now"])
+    assert await _replies(a, "AIKA.")
+    t["now"] += agent_aika.Assistant.WAKE_WINDOW_S + 1
+    assert not await _replies(a, "pass the salt")
+
+
+@pytest.mark.asyncio
+async def test_command_with_wake_word_does_not_open_window() -> None:
+    """Only a bare address opens the window — a full command already got its
+    reply, and side chatter right after must stay gated."""
+    a = agent_aika.Assistant(wake_mode="strict")
+    assert await _replies(a, "AIKA set a steak timer four minutes")
+    assert not await _replies(a, "pass the salt")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "phrase",
     [

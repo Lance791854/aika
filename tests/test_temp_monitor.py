@@ -91,6 +91,24 @@ def test_unknown_location_never_due() -> None:
     )
 
 
+def test_mark_alerted_persists_across_sessions() -> None:
+    # last-alert times live in the data file, so a rejoin doesn't re-warn early.
+    storage.add_temperature("freezer", -12)
+    at = _at("freezer")
+    storage.mark_alerted("freezer", at + COOLDOWN + 1)
+    assert storage.last_alerted() == {"freezer": at + COOLDOWN + 1}
+    assert (
+        storage.overdue_temperatures(
+            storage.last_alerted(), now=at + COOLDOWN + 2, cooldown=COOLDOWN
+        )
+        == []
+    )
+    due = storage.overdue_temperatures(
+        storage.last_alerted(), now=at + COOLDOWN * 2 + 2, cooldown=COOLDOWN
+    )
+    assert [d["location"] for d in due] == ["freezer"]
+
+
 def test_multiple_bad_locations_all_reported() -> None:
     storage.add_temperature("freezer", -12)
     storage.add_temperature("fridge", 9)

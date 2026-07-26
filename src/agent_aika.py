@@ -274,6 +274,11 @@ class Assistant(Agent):
     # and "ika" fire on ordinary speech — "basically", "medical", "paprika",
     # "America" — so the gate woke on side conversation and replied anyway.
     WAKE_RE = re.compile(r"\b(?:" + "|".join(WAKE_WORDS) + r")\b")
+    # A bare address ("AIKA." then a pause) opens the gate this long for the
+    # follow-up turn — STT splits the pause into two turns and the command
+    # half has no wake word in it.
+    WAKE_WINDOW_S = 10.0
+    _FILLER = {"hey", "ok", "okay", "um", "uh"}
 
     def __init__(self, wake_mode: str = "off", publish_fn=None) -> None:
         super().__init__(
@@ -307,6 +312,7 @@ class Assistant(Agent):
         self.timers: dict = {}
         self.reminders: dict = {}
         self._wake_mode = wake_mode
+        self._wake_open_until = 0.0
         self._publish = publish_fn or (lambda p: None)
 
     def _emit_state(self) -> None:
@@ -343,6 +349,19 @@ class Assistant(Agent):
             return
         text = (new_message.text_content or "").lower()
         if self.WAKE_RE.search(text):
+            # A bare address (nothing left after wake words and filler) opens
+            # a short window so the follow-up turn gets through. A turn that
+            # already carries a command does not — side chatter stays gated.
+            rest = [
+                w
+                for w in re.findall(r"[a-z']+", self.WAKE_RE.sub(" ", text))
+                if w not in self._FILLER
+            ]
+            if not rest:
+                self._wake_open_until = time.time() + self.WAKE_WINDOW_S
+            return
+        if time.time() < self._wake_open_until:
+            self._wake_open_until = 0.0  # window is for one follow-up turn
             return
         logger.info(f"wake gate skipping reply for {text!r}")
         raise StopResponse()
@@ -805,16 +824,16 @@ async def entrypoint(ctx: JobContext):
 
     # unattended re-alerting: if a bad reading never gets a corrective one,
     # AIKA speaks up again on its own every ALERT_COOLDOWN until it does.
-    last_alerted: dict[str, float] = {}
+    # Alert times persist in storage so a rejoin doesn't re-warn early.
 
     async def temp_monitor():
         while True:
             await asyncio.sleep(30)
-            due = storage.overdue_temperatures(last_alerted)
+            due = storage.overdue_temperatures(storage.last_alerted())
             if not due:
                 continue
             for d in due:
-                last_alerted[d["location"]] = time.time()
+                storage.mark_alerted(d["location"])
             logger.info(f"re-alerting: {[d['location'] for d in due]}")
             try:
                 await session.say(

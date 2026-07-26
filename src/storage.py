@@ -130,6 +130,17 @@ def recent_notes(limit: int = 5) -> list[dict]:
     return list(reversed(_load()["notes"]))[:limit]
 
 
+def last_alerted() -> dict[str, float]:
+    """Per-location timestamps of the last spoken re-alert."""
+    return _load().get("alerts", {})
+
+
+def mark_alerted(location: str, at: float | None = None) -> None:
+    data = _load()
+    data.setdefault("alerts", {})[location.lower()] = time.time() if at is None else at
+    _save(data)
+
+
 def shift_summary() -> str:
     """Spoken end-of-shift report: temps (flagging out-of-range), notes, unhandled."""
     parts = []
