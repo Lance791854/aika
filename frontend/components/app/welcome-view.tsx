@@ -132,6 +132,7 @@ export const WelcomeView = ({
             value={stack.llm}
             cloudLabel="Groq Llama-3.3 70B"
             localLabel="Qwen2.5 7B"
+            gpuLabel="Qwen3 8B"
             onChange={(v) => setStack({ ...stack, llm: v })}
           />
           <StackPickerRow
@@ -139,10 +140,11 @@ export const WelcomeView = ({
             value={stack.tts}
             cloudLabel="Cartesia"
             localLabel="Kokoro 82M"
+            gpuLabel="Kokoro GPU"
             onChange={(v) => setStack({ ...stack, tts: v })}
           />
           <p className="text-muted-foreground mt-1 text-center text-[10px] leading-snug">
-            Local stack runs on a CPU VPS — expect ~7-12s per turn.
+            Local stack runs on a CPU VPS — expect ~7-12s per turn. GPU options run on a RunPod GPU.
           </p>
           <div className="mt-2">
             <div className="text-muted-foreground mb-1 text-[10px] tracking-wider uppercase">

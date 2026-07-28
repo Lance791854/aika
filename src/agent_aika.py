@@ -66,6 +66,13 @@ LOCAL_TTS_VOICE = "af_bella"
 # reached over the VPS->pod SSH tunnel (pm2 "aika-gpu-tunnel") on localhost:9000.
 GPU_STT_URL = os.getenv("AIKA_GPU_STT_URL", "http://localhost:9000/v1")
 GPU_STT_MODEL = "nvidia/parakeet-tdt-0.6b-v2"
+# Qwen3 (Ollama) and Kokoro-FastAPI on the same pod, over the same tunnel.
+# 11435 not 11434 locally so nothing collides with a CPU-stack dev tunnel.
+GPU_LLM_URL = os.getenv("AIKA_GPU_LLM_URL", "http://localhost:11435/v1")
+GPU_LLM_MODEL = "qwen3:8b"
+GPU_TTS_URL = os.getenv("AIKA_GPU_TTS_URL", "http://localhost:8880/v1")
+GPU_TTS_MODEL = "kokoro"
+GPU_TTS_VOICE = "af_bella"  # same voice as the CPU stack, for clean A/B
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +174,17 @@ def build_stt(choice: str):
 
 
 def build_llm(choice: str):
+    if choice == "gpu":
+        logger.info(f"llm: gpu ({GPU_LLM_MODEL} @ Ollama/RunPod)")
+        # reasoning_effort="none" disables qwen3 thinking mode — with it on,
+        # the model burns seconds of reasoning tokens before the first word.
+        return openai.LLM(
+            base_url=GPU_LLM_URL,
+            api_key="ollama",
+            model=GPU_LLM_MODEL,
+            reasoning_effort="none",
+            timeout=httpx.Timeout(60.0, connect=10.0),
+        )
     if choice == "local":
         logger.info("llm: local (aika-llm via Ollama VPS)")
         return openai.LLM(
@@ -180,6 +198,18 @@ def build_llm(choice: str):
 
 
 def build_tts(choice: str):
+    if choice == "gpu":
+        logger.info("tts: gpu (Kokoro-FastAPI @ RunPod)")
+        # Kokoro-FastAPI speaks the same /v1/audio/speech API as speaches,
+        # so the pcm-based workaround class works unchanged.
+        return livekit_tts.StreamAdapter(
+            tts=_SpeachesTTS(
+                base_url=GPU_TTS_URL,
+                model=GPU_TTS_MODEL,
+                voice=GPU_TTS_VOICE,
+                api_key="kokoro",
+            ),
+        )
     if choice == "local":
         logger.info("tts: local (Kokoro via Speaches VPS)")
         # StreamAdapter wraps the non-streaming SpeachesTTS so the LLM output
