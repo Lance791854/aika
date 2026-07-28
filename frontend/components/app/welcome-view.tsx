@@ -32,25 +32,29 @@ interface WelcomeViewProps {
   setCompare: (v: boolean) => void;
 }
 
+// Where each option actually runs: hosted API, our CPU VPS, or the RunPod GPU.
+type Tier = 'API' | 'CPU' | 'GPU';
+
+const TIER_CLASS: Record<Tier, { active: string; inactive: string }> = {
+  API: { active: 'text-sky-600', inactive: 'text-sky-500/70' },
+  CPU: { active: 'text-amber-600', inactive: 'text-amber-500/70' },
+  GPU: { active: 'text-emerald-600', inactive: 'text-emerald-500/70' },
+};
+
+interface StackOption {
+  value: StackChoice;
+  label: string;
+  tier: Tier;
+}
+
 interface StackPickerRowProps {
   label: string;
   value: StackChoice;
-  cloudLabel: string;
-  localLabel: string;
-  gpuLabel?: string;
-  cartesiaLabel?: string;
+  options: StackOption[];
   onChange: (v: StackChoice) => void;
 }
 
-const StackPickerRow = ({
-  label,
-  value,
-  cloudLabel,
-  localLabel,
-  gpuLabel,
-  cartesiaLabel,
-  onChange,
-}: StackPickerRowProps) => {
+const StackPickerRow = ({ label, value, options, onChange }: StackPickerRowProps) => {
   const baseBtn = 'flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors';
   const active = 'bg-foreground text-background';
   const inactive = 'bg-muted text-muted-foreground hover:bg-muted/70';
@@ -60,38 +64,26 @@ const StackPickerRow = ({
         {label}
       </span>
       <div className="bg-muted flex flex-1 gap-1 rounded-md p-1">
-        <button
-          type="button"
-          onClick={() => onChange('cloud')}
-          className={`${baseBtn} ${value === 'cloud' ? active : inactive}`}
-        >
-          {cloudLabel}
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange('local')}
-          className={`${baseBtn} ${value === 'local' ? active : inactive}`}
-        >
-          {localLabel}
-        </button>
-        {gpuLabel && (
-          <button
-            type="button"
-            onClick={() => onChange('gpu')}
-            className={`${baseBtn} ${value === 'gpu' ? active : inactive}`}
-          >
-            {gpuLabel}
-          </button>
-        )}
-        {cartesiaLabel && (
-          <button
-            type="button"
-            onClick={() => onChange('cartesia')}
-            className={`${baseBtn} ${value === 'cartesia' ? active : inactive}`}
-          >
-            {cartesiaLabel}
-          </button>
-        )}
+        {options.map((o) => {
+          const isActive = value === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onChange(o.value)}
+              className={`${baseBtn} ${isActive ? active : inactive}`}
+            >
+              <span className="block leading-tight">{o.label}</span>
+              <span
+                className={`block text-[9px] font-semibold tracking-widest ${
+                  TIER_CLASS[o.tier][isActive ? 'active' : 'inactive']
+                }`}
+              >
+                {o.tier}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -121,30 +113,39 @@ export const WelcomeView = ({
           <StackPickerRow
             label="STT"
             value={stack.stt}
-            cloudLabel="Deepgram"
-            localLabel="Whisper"
-            gpuLabel="Parakeet"
-            cartesiaLabel="Cartesia"
+            options={[
+              { value: 'cloud', label: 'Deepgram', tier: 'API' },
+              { value: 'local', label: 'Whisper', tier: 'CPU' },
+              { value: 'gpu', label: 'Parakeet', tier: 'GPU' },
+              { value: 'cartesia', label: 'Cartesia', tier: 'API' },
+            ]}
             onChange={(v) => setStack({ ...stack, stt: v })}
           />
           <StackPickerRow
             label="LLM"
             value={stack.llm}
-            cloudLabel="Groq Llama-3.3 70B"
-            localLabel="Qwen2.5 7B"
-            gpuLabel="Qwen3 8B"
+            options={[
+              { value: 'cloud', label: 'Llama-3.3 70B', tier: 'API' },
+              { value: 'local', label: 'Qwen2.5 7B', tier: 'CPU' },
+              { value: 'gpu', label: 'Qwen3 8B', tier: 'GPU' },
+            ]}
             onChange={(v) => setStack({ ...stack, llm: v })}
           />
           <StackPickerRow
             label="TTS"
             value={stack.tts}
-            cloudLabel="Cartesia"
-            localLabel="Kokoro 82M"
-            gpuLabel="Kokoro GPU"
+            options={[
+              { value: 'cloud', label: 'Cartesia', tier: 'API' },
+              { value: 'local', label: 'Kokoro 82M', tier: 'CPU' },
+              { value: 'gpu', label: 'Kokoro 82M', tier: 'GPU' },
+            ]}
             onChange={(v) => setStack({ ...stack, tts: v })}
           />
           <p className="text-muted-foreground mt-1 text-center text-[10px] leading-snug">
-            Local stack runs on a CPU VPS — expect ~7-12s per turn. GPU options run on a RunPod GPU.
+            <span className="font-semibold text-sky-500/80">API</span> = hosted cloud &middot;{' '}
+            <span className="font-semibold text-amber-500/80">CPU</span> = self-hosted VPS
+            (~7-12s/turn) &middot; <span className="font-semibold text-emerald-500/80">GPU</span> =
+            self-hosted RunPod
           </p>
           <div className="mt-2">
             <div className="text-muted-foreground mb-1 text-[10px] tracking-wider uppercase">
