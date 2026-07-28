@@ -852,6 +852,28 @@ async def entrypoint(ctx: JobContext):
 
     ctx.room.on("data_received", _on_data)
 
+    # nudge the pod's LLM as the call starts so the first real turn doesn't
+    # pay any cold-start cost. keep_alive=-1 on the pod does the heavy lifting;
+    # this covers the first call after a pod reboot.
+    if llm_choice == "gpu":
+
+        async def _warm_gpu_llm():
+            try:
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    await client.post(
+                        f"{GPU_LLM_URL}/chat/completions",
+                        json={
+                            "model": GPU_LLM_MODEL,
+                            "messages": [{"role": "user", "content": "hi"}],
+                            "max_tokens": 1,
+                        },
+                    )
+                logger.info("gpu llm warmed")
+            except Exception as e:
+                logger.warning(f"gpu llm warm-up failed: {e}")
+
+        asyncio.create_task(_warm_gpu_llm())
+
     # unattended re-alerting: if a bad reading never gets a corrective one,
     # AIKA speaks up again on its own every ALERT_COOLDOWN until it does.
     # Alert times persist in storage so a rejoin doesn't re-warn early.
