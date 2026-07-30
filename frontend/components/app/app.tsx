@@ -15,7 +15,7 @@ import { getSandboxTokenSource } from '@/lib/utils';
 
 export type StackChoice = 'cloud' | 'local' | 'gpu' | 'cartesia';
 export type Stack = { stt: StackChoice; llm: StackChoice; tts: StackChoice };
-export type WakeMode = 'off' | 'strict';
+export type WakeMode = 'off' | 'strict' | 'device';
 
 const DEFAULT_STACK: Stack = { stt: 'cloud', llm: 'cloud', tts: 'cloud' };
 

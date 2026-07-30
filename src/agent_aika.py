@@ -35,6 +35,7 @@ from livekit.agents import (
 from livekit.agents import (
     tts as livekit_tts,
 )
+from livekit import rtc
 from livekit.agents.llm import StopResponse
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN, NotGivenOr
 from livekit.agents.utils import AudioBuffer
@@ -281,6 +282,93 @@ class _CompareSTT(livekit_stt.STT):
 
 
 # ---------------------------------------------------------------------------
+# "device" wake mode. Works like the planned ESP32 wearable: whisper-tiny on
+# the CPU box checks each utterance for "AIKA" first. Only after that does
+# audio go to the real STT and LLM. Everything else never leaves our servers.
+# ---------------------------------------------------------------------------
+WAKE_SPOT_MODEL = "Systran/faster-whisper-tiny.en"
+WAKE_SPOT_WINDOW_S = 10.0
+
+
+def device_gate(spot_text: str, armed_until: float, now: float) -> tuple[bool, float]:
+    """Forward/drop decision. Returns (forward, new_armed_until)."""
+    if now < armed_until:
+        return True, now + WAKE_SPOT_WINDOW_S
+    text = spot_text.lower()
+    # also catch spelled-out forms like "A.I.K.A." — squash to letters only
+    compact = re.sub(r"[^a-z]", "", text)
+    if Assistant.WAKE_RE.search(text) or "aika" in compact:
+        return True, now + WAKE_SPOT_WINDOW_S
+    return False, armed_until
+
+
+class _WakeGatedSTT(livekit_stt.STT):
+    def __init__(self, inner: livekit_stt.STT, publish) -> None:
+        # non-streaming on purpose, even when the inner engine streams —
+        # the session then VAD-chunks audio and every chunk passes the wake
+        # check before anything is sent on.
+        super().__init__(
+            capabilities=livekit_stt.STTCapabilities(
+                streaming=False, interim_results=False
+            )
+        )
+        self._inner = inner
+        self._publish = publish
+        self._armed_until = 0.0
+
+    async def _spot(self, buffer: AudioBuffer) -> str:
+        wav = rtc.combine_audio_frames(buffer).to_wav_bytes()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.post(
+                    f"{LOCAL_SPEACHES_URL}/audio/transcriptions",
+                    files={"file": ("audio.wav", wav, "audio/wav")},
+                    data={
+                        "model": WAKE_SPOT_MODEL,
+                        "language": "en",
+                        # the model has never seen the name — this hint makes
+                        # it write "AIKA" instead of "I can" or "A.I.K.A."
+                        "prompt": (
+                            "The kitchen assistant is called AIKA. "
+                            "Chefs say things like: AIKA, set a timer. hey AIKA."
+                        ),
+                    },
+                    headers={"Authorization": "Bearer speaches"},
+                )
+                r.raise_for_status()
+                return r.json().get("text", "")
+        except Exception as e:
+            logger.warning(f"wake check server unreachable, staying silent: {e}")
+            return ""
+
+    async def _recognize_impl(
+        self,
+        buffer: AudioBuffer,
+        *,
+        language: NotGivenOr[str] = NOT_GIVEN,
+        conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
+    ):
+        now = time.time()
+        # inside the window: forward straight away, no spotting needed
+        forward, self._armed_until = device_gate("", self._armed_until, now)
+        spot = ""
+        if not forward:
+            spot = await self._spot(buffer)
+            forward, self._armed_until = device_gate(spot, self._armed_until, now)
+        if forward:
+            self._publish({"type": "wake_gate", "forwarded": True, "spot": spot})
+            return await self._inner.recognize(
+                buffer, language=language, conn_options=conn_options
+            )
+        self._publish({"type": "wake_gate", "forwarded": False, "spot": spot})
+        logger.info(f"wake gate dropped utterance: {spot!r}")
+        return livekit_stt.SpeechEvent(
+            type=livekit_stt.SpeechEventType.FINAL_TRANSCRIPT,
+            alternatives=[livekit_stt.SpeechData(language="en", text="")],
+        )
+
+
+# ---------------------------------------------------------------------------
 # AIKA agent definition. Same persona, same tools — just shared between
 # both deployment modes.
 # ---------------------------------------------------------------------------
@@ -376,6 +464,12 @@ class Assistant(Agent):
         # "off" replies to everything; "strict" only replies to utterances that
         # address AIKA by name (e.g. "AIKA ..." or "hey AIKA ...").
         if self._wake_mode == "off":
+            return
+        if self._wake_mode == "device":
+            # gating happened pre-STT in _WakeGatedSTT — only the empty turns
+            # the gate left behind need dropping here.
+            if not (new_message.text_content or "").strip():
+                raise StopResponse()
             return
         text = (new_message.text_content or "").lower()
         if self.WAKE_RE.search(text):
@@ -647,7 +741,7 @@ async def entrypoint(ctx: JobContext):
     wake_mode = str(choices.get("wake", "off"))
     if wake_mode == "window":
         wake_mode = "strict"
-    if wake_mode not in ("off", "strict"):
+    if wake_mode not in ("off", "strict", "device"):
         wake_mode = "off"
     logger.info(
         f"📋 stack stt={stt_choice} llm={llm_choice} tts={tts_choice}"
@@ -684,6 +778,11 @@ async def entrypoint(ctx: JobContext):
         )
     else:
         stt_impl = build_stt(stt_choice)
+
+    # wearable sim: check for "AIKA" locally before any audio reaches real STT
+    if wake_mode == "device":
+        logger.info("wake: device sim (local wake check before STT)")
+        stt_impl = _WakeGatedSTT(stt_impl, _publish)
 
     # Local inference is slow — give the framework a longer timeout for any
     # slot that's pointing at a self-hosted endpoint, otherwise it'll retry

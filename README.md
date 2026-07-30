@@ -13,6 +13,7 @@ speaks back unprompted when something needs attention.
 - **Notes** — `"make a note we're out of butter"` / `"what notes do we have"` / `"what are we out of"`
 - **Shift summary** — `"give me the shift summary"`. Spoken end-of-shift report: latest temp per location (flagging anything out of range), notes, and a count of unhandled requests.
 - **Wake modes** — always reply / only reply when addressed by name (`"AIKA ..."` or `"hey AIKA ..."`). Saying just `"AIKA"` and pausing opens a 10-second window for the follow-up command.
+- **Wearable sim** — a wake mode that works like the planned ESP32 wearable. A small local model listens for `"AIKA"`. Until it hears it, nothing is sent to the STT or LLM at all.
 - **Status panel** — fixed side panel during the call. Running timers with countdown, latest temperature per location, latest notes. Out-of-range temps go red. Includes a button to run a safety check (AIKA scans recent readings and speaks any warnings), plus per-card buttons to inject fake low/ok/high readings for testing the alerts.
 - **Debug overlay** — per-turn STT / LLM / TTS timings, transcripts, tool calls
 - **Per-call stack toggle** — pick cloud or self-hosted for each of STT / LLM / TTS independently. Defaults to cloud. Choices ride in the agent dispatch metadata.

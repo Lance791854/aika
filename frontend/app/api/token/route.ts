@@ -55,7 +55,8 @@ export async function POST(req: Request) {
       // valid {cloud|local|gpu|cartesia} values; anything else falls back to defaults.
       const valid = (v: unknown): v is StackChoice =>
         v === 'cloud' || v === 'local' || v === 'gpu' || v === 'cartesia';
-      const validWake = (v: unknown): v is 'off' | 'strict' => v === 'off' || v === 'strict';
+      const validWake = (v: unknown): v is 'off' | 'strict' | 'device' =>
+        v === 'off' || v === 'strict' || v === 'device';
       const meta: Stack & { wake?: string; compare?: boolean } = {};
       if (valid(body.stack?.stt)) meta.stt = body.stack.stt;
       if (valid(body.stack?.llm)) meta.llm = body.stack.llm;

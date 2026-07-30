@@ -154,16 +154,9 @@ export const WelcomeView = ({
             <div className="bg-muted flex gap-1 rounded-md p-1">
               {(
                 [
-                  {
-                    mode: 'off' as WakeMode,
-                    label: 'Always',
-                    desc: 'AIKA replies to every utterance, even side conversations.',
-                  },
-                  {
-                    mode: 'strict' as WakeMode,
-                    label: 'After "AIKA"',
-                    desc: 'Only replies when you address it by name, like "AIKA ..." or "hey AIKA ...". Otherwise it stays silent.',
-                  },
+                  { mode: 'off' as WakeMode, label: 'Always' },
+                  { mode: 'strict' as WakeMode, label: 'After "AIKA"' },
+                  { mode: 'device' as WakeMode, label: 'Wearable sim' },
                 ] as const
               ).map(({ mode, label }) => {
                 const active = wake === mode;
@@ -184,9 +177,11 @@ export const WelcomeView = ({
               })}
             </div>
             <p className="text-muted-foreground mt-1.5 text-center text-[10px] leading-snug">
-              {wake === 'off'
-                ? 'AIKA replies to every utterance, even side conversations.'
-                : 'Only replies when you address it by name, like "AIKA ..." or "hey AIKA ...". Otherwise it stays silent.'}
+              {wake === 'off' && 'AIKA replies to everything it hears, even side conversations.'}
+              {wake === 'strict' &&
+                'Only replies when you address it by name, like "AIKA ..." or "hey AIKA ...". Otherwise it stays silent.'}
+              {wake === 'device' &&
+                'Works like the planned wearable. A small model on our own server listens for "AIKA". Nothing is sent to the cloud until it hears that.'}
             </p>
           </div>
           <button
