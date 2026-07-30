@@ -291,14 +291,26 @@ WAKE_SPOT_WINDOW_S = 10.0
 
 
 def device_gate(spot_text: str, armed_until: float, now: float) -> tuple[bool, float]:
-    """Forward/drop decision. Returns (forward, new_armed_until)."""
+    """Forward/drop decision. Returns (forward, new_armed_until).
+
+    Same rules as the strict wake mode: a full command is handled and the mic
+    closes again. Only a bare "AIKA" leaves a 10s window open, and one
+    follow-up uses it up.
+    """
     if now < armed_until:
-        return True, now + WAKE_SPOT_WINDOW_S
+        return True, 0.0
     text = spot_text.lower()
     # also catch spelled-out forms like "A.I.K.A." — squash to letters only
     compact = re.sub(r"[^a-z]", "", text)
     if Assistant.WAKE_RE.search(text) or "aika" in compact:
-        return True, now + WAKE_SPOT_WINDOW_S
+        rest = [
+            w
+            for w in re.findall(r"[a-z']+", Assistant.WAKE_RE.sub(" ", text))
+            if w not in Assistant._FILLER
+        ]
+        if not rest:
+            return True, now + WAKE_SPOT_WINDOW_S
+        return True, 0.0
     return False, armed_until
 
 
