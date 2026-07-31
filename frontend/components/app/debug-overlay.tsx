@@ -32,7 +32,8 @@ type TurnEvent =
       tokens: number;
       tok_per_sec: number;
     }
-  | { type: 'tts_metrics'; at: number; duration: number; ttfb: number; chars: number };
+  | { type: 'tts_metrics'; at: number; duration: number; ttfb: number; chars: number }
+  | { type: 'wake_gate'; at: number; forwarded: boolean; spot: string };
 
 type StateEvent = {
   type: 'state';
@@ -224,8 +225,25 @@ export function DebugOverlay() {
     return null;
   }, [events]);
 
+  // Wake gate decisions get their own feed — blocked utterances never open a
+  // turn, so they'd otherwise be invisible here.
+  const gateEvents = useMemo(
+    () =>
+      events
+        .filter((e): e is Extract<TurnEvent, { type: 'wake_gate' }> => e.type === 'wake_gate')
+        .slice(-6)
+        .reverse(),
+    [events]
+  );
+
   // Only show the last 3 turns to keep the overlay readable.
-  const turns = useMemo(() => groupTurns(events).slice(-3).reverse(), [events]);
+  const turns = useMemo(
+    () =>
+      groupTurns(events.filter((e) => e.type !== 'wake_gate'))
+        .slice(-3)
+        .reverse(),
+    [events]
+  );
 
   return (
     <div className="bg-background/95 fixed right-4 bottom-4 z-50 max-h-[60vh] w-80 overflow-y-auto rounded-lg border p-3 font-mono text-[11px] leading-snug shadow-lg backdrop-blur">
@@ -237,6 +255,23 @@ export function DebugOverlay() {
           </span>
         )}
       </div>
+      {gateEvents.length > 0 && (
+        <div className="bg-muted/40 mb-2 rounded p-1.5">
+          <div className="text-muted-foreground mb-1 text-[9px] tracking-wider uppercase">
+            wake gate (newest first)
+          </div>
+          {gateEvents.map((g, i) => (
+            <div key={i} className="mb-0.5 flex gap-1.5">
+              <span className={`w-14 shrink-0 ${g.forwarded ? 'text-green-500' : 'text-red-400'}`}>
+                {g.forwarded ? 'sent' : 'blocked'}
+              </span>
+              <span className="text-foreground/80 flex-1 break-words">
+                {g.spot ? `"${g.spot}"` : 'follow-up window was open'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {turns.length === 0 ? (
         <div className="text-muted-foreground mt-2 text-center text-[10px]">
           waiting for first turn...
