@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       // they reach `ctx.job.metadata` in the Python worker. Only forward
       // valid {cloud|local|gpu|cartesia} values; anything else falls back to defaults.
       const valid = (v: unknown): v is StackChoice =>
-        v === 'cloud' || v === 'local' || v === 'gpu' || v === 'cartesia';
+        v === 'cloud' || v === 'local' || v === 'gpu' || v === 'cartesia' || v === 'cf';
       const validWake = (v: unknown): v is 'off' | 'strict' | 'device' =>
         v === 'off' || v === 'strict' || v === 'device';
       const meta: Stack & { wake?: string; compare?: boolean } = {};

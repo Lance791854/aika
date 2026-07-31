@@ -32,11 +32,12 @@ interface WelcomeViewProps {
   setCompare: (v: boolean) => void;
 }
 
-// Where each option actually runs: hosted API, our CPU VPS, or the RunPod GPU.
-type Tier = 'API' | 'CPU' | 'GPU';
+// Where each option actually runs: hosted API, Cloudflare, our CPU VPS, or the RunPod GPU.
+type Tier = 'API' | 'CF API' | 'CPU' | 'GPU';
 
 const TIER_CLASS: Record<Tier, { active: string; inactive: string }> = {
   API: { active: 'text-sky-600', inactive: 'text-sky-500/70' },
+  'CF API': { active: 'text-violet-600', inactive: 'text-violet-500/70' },
   CPU: { active: 'text-amber-600', inactive: 'text-amber-500/70' },
   GPU: { active: 'text-emerald-600', inactive: 'text-emerald-500/70' },
 };
@@ -55,7 +56,8 @@ interface StackPickerRowProps {
 }
 
 const StackPickerRow = ({ label, value, options, onChange }: StackPickerRowProps) => {
-  const baseBtn = 'flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors';
+  const baseBtn =
+    'flex min-h-11 flex-1 flex-col items-center justify-center rounded-md px-1.5 py-1 text-xs font-medium transition-colors';
   const active = 'bg-foreground text-background';
   const inactive = 'bg-muted text-muted-foreground hover:bg-muted/70';
   return (
@@ -109,7 +111,7 @@ export const WelcomeView = ({
 
         <h1 className="text-foreground text-2xl font-bold tracking-tight">AIKA</h1>
 
-        <div className="mt-6 flex w-80 flex-col gap-3">
+        <div className="mt-6 flex w-[26rem] max-w-[calc(100vw-2rem)] flex-col gap-3">
           <StackPickerRow
             label="STT"
             value={stack.stt}
@@ -125,7 +127,8 @@ export const WelcomeView = ({
             label="LLM"
             value={stack.llm}
             options={[
-              { value: 'cloud', label: 'Llama-3.3 70B', tier: 'API' },
+              { value: 'cloud', label: 'Llama 70B Groq', tier: 'API' },
+              { value: 'cf', label: 'Llama 70B CF', tier: 'CF API' },
               { value: 'local', label: 'Qwen2.5 7B', tier: 'CPU' },
               { value: 'gpu', label: 'Qwen3 8B', tier: 'GPU' },
             ]}
@@ -143,6 +146,7 @@ export const WelcomeView = ({
           />
           <p className="text-muted-foreground mt-1 text-center text-[10px] leading-snug">
             <span className="font-semibold text-sky-500/80">API</span> = hosted cloud &middot;{' '}
+            <span className="font-semibold text-violet-500/80">CF API</span> = Cloudflare &middot;{' '}
             <span className="font-semibold text-amber-500/80">CPU</span> = self-hosted VPS
             (~7-12s/turn) &middot; <span className="font-semibold text-emerald-500/80">GPU</span> =
             self-hosted RunPod

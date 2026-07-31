@@ -75,6 +75,13 @@ GPU_TTS_URL = os.getenv("AIKA_GPU_TTS_URL", "http://localhost:8880/v1")
 GPU_TTS_MODEL = "kokoro"
 GPU_TTS_VOICE = "af_bella"  # same voice as the CPU stack, for clean A/B
 
+# Cloudflare Workers AI. Credentials come from .env.local, never the repo.
+CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "")
+CF_API_TOKEN = os.getenv("CF_API_TOKEN", "")
+CF_BASE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/v1"
+# same model Groq serves — lets us compare providers on equal footing
+CF_LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+
 
 # ---------------------------------------------------------------------------
 # Custom TTS class for Speaches/Kokoro.
@@ -175,6 +182,15 @@ def build_stt(choice: str):
 
 
 def build_llm(choice: str):
+    if choice == "cf":
+        if CF_ACCOUNT_ID and CF_API_TOKEN:
+            logger.info(f"llm: cloudflare ({CF_LLM_MODEL})")
+            return openai.LLM(
+                base_url=CF_BASE_URL,
+                api_key=CF_API_TOKEN,
+                model=CF_LLM_MODEL,
+            )
+        logger.warning("cf llm selected but CF credentials missing — using cloud")
     if choice == "gpu":
         logger.info(f"llm: gpu ({GPU_LLM_MODEL} @ Ollama/RunPod)")
         # reasoning_effort="none" disables qwen3 thinking mode — with it on,
