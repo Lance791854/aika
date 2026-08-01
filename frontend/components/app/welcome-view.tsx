@@ -117,9 +117,9 @@ export const WelcomeView = ({
             value={stack.stt}
             options={[
               { value: 'cloud', label: 'Deepgram', tier: 'API' },
+              { value: 'cartesia', label: 'Cartesia', tier: 'API' },
               { value: 'local', label: 'Whisper', tier: 'CPU' },
               { value: 'gpu', label: 'Parakeet', tier: 'GPU' },
-              { value: 'cartesia', label: 'Cartesia', tier: 'API' },
               { value: 'cf', label: 'Nova-3 CF', tier: 'CF API' },
             ]}
             onChange={(v) => setStack({ ...stack, stt: v })}
@@ -129,9 +129,9 @@ export const WelcomeView = ({
             value={stack.llm}
             options={[
               { value: 'cloud', label: 'Llama 70B Groq', tier: 'API' },
-              { value: 'cf', label: 'Llama 70B CF', tier: 'CF API' },
               { value: 'local', label: 'Qwen2.5 7B', tier: 'CPU' },
               { value: 'gpu', label: 'Qwen3 8B', tier: 'GPU' },
+              { value: 'cf', label: 'Llama 70B CF', tier: 'CF API' },
             ]}
             onChange={(v) => setStack({ ...stack, llm: v })}
           />
@@ -142,7 +142,7 @@ export const WelcomeView = ({
               { value: 'cloud', label: 'Cartesia', tier: 'API' },
               { value: 'local', label: 'Kokoro 82M', tier: 'CPU' },
               { value: 'gpu', label: 'Kokoro 82M', tier: 'GPU' },
-              { value: 'cf', label: 'Aura 2', tier: 'CF API' },
+              { value: 'cf', label: 'Aura 2 CF', tier: 'CF API' },
             ]}
             onChange={(v) => setStack({ ...stack, tts: v })}
           />
