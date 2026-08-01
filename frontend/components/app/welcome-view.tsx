@@ -120,6 +120,7 @@ export const WelcomeView = ({
               { value: 'local', label: 'Whisper', tier: 'CPU' },
               { value: 'gpu', label: 'Parakeet', tier: 'GPU' },
               { value: 'cartesia', label: 'Cartesia', tier: 'API' },
+              { value: 'cf', label: 'Nova-3 CF', tier: 'CF API' },
             ]}
             onChange={(v) => setStack({ ...stack, stt: v })}
           />
@@ -141,6 +142,7 @@ export const WelcomeView = ({
               { value: 'cloud', label: 'Cartesia', tier: 'API' },
               { value: 'local', label: 'Kokoro 82M', tier: 'CPU' },
               { value: 'gpu', label: 'Kokoro 82M', tier: 'GPU' },
+              { value: 'cf', label: 'Aura 2', tier: 'CF API' },
             ]}
             onChange={(v) => setStack({ ...stack, tts: v })}
           />

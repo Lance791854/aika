@@ -81,6 +81,10 @@ CF_API_TOKEN = os.getenv("CF_API_TOKEN", "")
 CF_BASE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/v1"
 # same model Groq serves — lets us compare providers on equal footing
 CF_LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+CF_RUN_URL = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run"
+# same models Deepgram serves directly — provider-vs-provider comparison
+CF_STT_MODEL = "@cf/deepgram/nova-3"
+CF_TTS_MODEL = "@cf/deepgram/aura-2-en"
 
 
 # ---------------------------------------------------------------------------
@@ -142,12 +146,101 @@ class _SpeachesTTSStream(livekit_tts.ChunkedStream):
 
 
 # ---------------------------------------------------------------------------
+# Cloudflare Workers AI STT and TTS. Neither speaks the standard OpenAI audio
+# API, so both get small wrappers: nova-3 takes the raw wav as the request
+# body, aura-2 returns raw 24kHz PCM when asked.
+# ---------------------------------------------------------------------------
+class _CFSTT(livekit_stt.STT):
+    def __init__(self) -> None:
+        super().__init__(
+            capabilities=livekit_stt.STTCapabilities(
+                streaming=False, interim_results=False
+            )
+        )
+
+    async def _recognize_impl(
+        self,
+        buffer: AudioBuffer,
+        *,
+        language: NotGivenOr[str] = NOT_GIVEN,
+        conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
+    ):
+        wav = rtc.combine_audio_frames(buffer).to_wav_bytes()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.post(
+                f"{CF_RUN_URL}/{CF_STT_MODEL}",
+                params={"keyterm": "AIKA"},
+                headers={
+                    "Authorization": f"Bearer {CF_API_TOKEN}",
+                    "Content-Type": "audio/wav",
+                },
+                content=wav,
+            )
+            r.raise_for_status()
+            alts = r.json()["result"]["results"]["channels"][0]["alternatives"]
+            text = alts[0]["transcript"] if alts else ""
+        return livekit_stt.SpeechEvent(
+            type=livekit_stt.SpeechEventType.FINAL_TRANSCRIPT,
+            alternatives=[livekit_stt.SpeechData(language="en", text=text)],
+        )
+
+
+class _CFTTS(livekit_tts.TTS):
+    def __init__(self) -> None:
+        super().__init__(
+            capabilities=livekit_tts.TTSCapabilities(streaming=False),
+            sample_rate=24000,
+            num_channels=1,
+        )
+
+    def synthesize(self, text: str, *, conn_options: APIConnectOptions | None = None):
+        return _CFTTSStream(
+            tts=self,
+            input_text=text,
+            conn_options=conn_options or DEFAULT_API_CONNECT_OPTIONS,
+        )
+
+
+class _CFTTSStream(livekit_tts.ChunkedStream):
+    async def _run(self, output_emitter: livekit_tts.AudioEmitter) -> None:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.post(
+                f"{CF_RUN_URL}/{CF_TTS_MODEL}",
+                headers={"Authorization": f"Bearer {CF_API_TOKEN}"},
+                json={
+                    "text": self._input_text,
+                    "encoding": "linear16",
+                    "sample_rate": 24000,
+                    "container": "none",
+                },
+            )
+            r.raise_for_status()
+            data = r.content
+
+        output_emitter.initialize(
+            request_id="cf-aura",
+            sample_rate=24000,
+            num_channels=1,
+            mime_type="audio/pcm",
+        )
+        CHUNK = 4096
+        for i in range(0, len(data), CHUNK):
+            output_emitter.push(data[i : i + CHUNK])
+        output_emitter.flush()
+
+
+# ---------------------------------------------------------------------------
 # Per-slot plugin builders. Each takes a choice string ("cloud" or "local")
 # and returns a configured LiveKit STT/LLM/TTS instance. Unknown choices
 # fall back to cloud — keeps the live site working even if the frontend
 # sends garbage metadata.
 # ---------------------------------------------------------------------------
 def build_stt(choice: str):
+    if choice == "cf":
+        if CF_ACCOUNT_ID and CF_API_TOKEN:
+            logger.info(f"stt: cloudflare ({CF_STT_MODEL})")
+            return _CFSTT()
+        logger.warning("cf stt selected but CF credentials missing — using cloud")
     if choice == "gpu":
         logger.info(f"stt: gpu ({GPU_STT_MODEL} @ Parakeet/RunPod)")
         return openai.STT(
@@ -215,6 +308,11 @@ def build_llm(choice: str):
 
 
 def build_tts(choice: str):
+    if choice == "cf":
+        if CF_ACCOUNT_ID and CF_API_TOKEN:
+            logger.info(f"tts: cloudflare ({CF_TTS_MODEL})")
+            return livekit_tts.StreamAdapter(tts=_CFTTS())
+        logger.warning("cf tts selected but CF credentials missing — using cloud")
     if choice == "gpu":
         logger.info("tts: gpu (Kokoro-FastAPI @ RunPod)")
         # Kokoro-FastAPI speaks the same /v1/audio/speech API as speaches,
