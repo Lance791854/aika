@@ -126,3 +126,6 @@ frontend/LICENSE
 frontend/TEMPLATE.md
 frontend/renovate.json
 frontend/taskfile.yaml
+
+# local cost workbook, not for the public repo
+docs/cost-analysis.xlsx
