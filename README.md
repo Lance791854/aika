@@ -121,8 +121,10 @@ agent worker's IP.
 uv run pytest
 ```
 
-These use OpenAI `gpt-4.1-mini` as the judge, so they need `OPENAI_API_KEY` for tests only —
-the agent itself doesn't call OpenAI.
+The behavior tests use Groq `llama-3.3-70b-versatile` as the judge, so they need `GROQ_API_KEY`.
+Groq has a free tier, that is why we use it. The free tier has a small per minute limit, so the
+suite pauses between tests and takes a few minutes. If you have OpenAI credits you can swap the
+judge in `tests/` back to `gpt-4.1-mini`, it runs faster.
 
 ## License
 
