@@ -10,6 +10,8 @@ speaks back unprompted when something needs attention.
 - **Timers** — `"AIKA, steak four minutes"` / `"how long for steak"` / `"cancel steak timer"`
 - **Temperatures** — `"log the freezer at minus eighteen"` / `"what was the freezer at"`. Readings outside [FSANZ](https://www.foodstandards.gov.au/) safe ranges (freezer below -18, fridge 0-5, cooked poultry above 75, etc.) trigger an immediate warning. If no in range reading is logged, AIKA re-warns unprompted every 5 minutes until one is.
 - **Reminders** — `"remind me in twenty minutes to rotate the stock"` / `"what reminders are set"` / `"cancel the stock reminder"`. Spoken aloud unprompted when the time is up. No time given means it's saved as a note instead.
+- **Stock requests** — `"we're low on cream, order five kilos, urgent"` / `"what stock do we need"`. Shown in the panel and the shift summary.
+- **Deleting** — `"delete the note about butter"`. AIKA reads it back and asks yes or no first. Works for notes and stock requests.
 - **Notes** — `"make a note we're out of butter"` / `"what notes do we have"` / `"what are we out of"`
 - **Shift summary** — `"give me the shift summary"`. Spoken end-of-shift report: latest temp per location (flagging anything out of range), notes, and a count of unhandled requests.
 - **Wake modes** — always reply / only reply when addressed by name (`"AIKA ..."` or `"hey AIKA ..."`). Saying just `"AIKA"` and pausing opens a 10-second window for the follow-up command.

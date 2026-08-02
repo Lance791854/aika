@@ -13,12 +13,14 @@ type TempEntry = {
 };
 type NoteEntry = { text: string; at: number };
 type UnhandledEntry = { text: string; at: number };
+type StockEntry = { item: string; quantity: string; urgency: string; at: number };
 
 type StateEvent = {
   type: 'state';
   timers: ActiveTimer[];
   reminders: ReminderEntry[];
   temperatures: TempEntry[];
+  stock: StockEntry[];
   notes: NoteEntry[];
   unhandled: UnhandledEntry[];
 };
@@ -173,6 +175,35 @@ function TempCard({
   );
 }
 
+function StockCard({
+  entry,
+  now,
+  onDelete,
+}: {
+  entry: StockEntry;
+  now: number;
+  onDelete: () => void;
+}) {
+  const urgent = entry.urgency === 'urgent';
+  return (
+    <div
+      className={`rounded-md border p-2 ${
+        urgent ? 'border-red-500/50 bg-red-500/5' : 'border-border/60 bg-card'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-1">
+        <div className="text-foreground text-sm leading-snug">
+          {entry.item}
+          {entry.quantity && <span className="text-muted-foreground"> — {entry.quantity}</span>}
+          {urgent && <span className="ml-1 font-semibold text-red-500">urgent</span>}
+        </div>
+        <DeleteX onClick={onDelete} title="Delete stock request" />
+      </div>
+      <div className="text-muted-foreground mt-1 text-[10px]">{fmtTimeAgo(entry.at, now)}</div>
+    </div>
+  );
+}
+
 function NoteCard({ note, now, onDelete }: { note: NoteEntry; now: number; onDelete: () => void }) {
   return (
     <div className="bg-card border-border/60 rounded-md border p-2">
@@ -206,7 +237,7 @@ function UnhandledCard({
 }
 
 interface Section {
-  key: 'timers' | 'reminders' | 'temperatures' | 'notes' | 'unhandled';
+  key: 'timers' | 'reminders' | 'temperatures' | 'stock' | 'notes' | 'unhandled';
   title: string;
   count: number;
   empty: string;
@@ -217,9 +248,10 @@ export function LiveStatePanel() {
     timers: ActiveTimer[];
     reminders: ReminderEntry[];
     temperatures: TempEntry[];
+    stock: StockEntry[];
     notes: NoteEntry[];
     unhandled: UnhandledEntry[];
-  }>({ timers: [], reminders: [], temperatures: [], notes: [], unhandled: [] });
+  }>({ timers: [], reminders: [], temperatures: [], stock: [], notes: [], unhandled: [] });
   const [collapsed, setCollapsed] = useState(false);
 
   // hidden-section toggles, persisted across tab in localStorage
@@ -254,6 +286,7 @@ export function LiveStatePanel() {
           timers: ev.timers ?? [],
           reminders: ev.reminders ?? [],
           temperatures: ev.temperatures ?? [],
+          stock: ev.stock ?? [],
           notes: ev.notes ?? [],
           unhandled: ev.unhandled ?? [],
         });
@@ -281,6 +314,8 @@ export function LiveStatePanel() {
   const clearUnhandled = () => act({ type: 'clear_unhandled' });
   const deleteUnhandled = (at: number) => act({ type: 'delete_unhandled', at });
   const clearNotes = () => act({ type: 'clear_notes' });
+  const clearStock = () => act({ type: 'clear_stock' });
+  const deleteStock = (at: number) => act({ type: 'delete_stock', at });
   const deleteNote = (at: number) => act({ type: 'delete_note', at });
   const clearTemps = () => act({ type: 'clear_temps' });
   const deleteTemp = (location: string) => act({ type: 'delete_temp', location });
@@ -303,6 +338,12 @@ export function LiveStatePanel() {
       title: 'Temperatures',
       count: state.temperatures.length,
       empty: 'No readings yet.',
+    },
+    {
+      key: 'stock',
+      title: 'Stock',
+      count: state.stock.length,
+      empty: 'No stock requests.',
     },
     {
       key: 'notes',
@@ -454,6 +495,37 @@ export function LiveStatePanel() {
                     onInject={injectTemp}
                     onDelete={() => deleteTemp(t.location)}
                   />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {!hidden.has('stock') && (
+          <section className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
+                Stock
+              </h3>
+              {state.stock.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearStock}
+                  className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
+                  title="Clear all stock requests"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {state.stock.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                {'No stock requests. Try "we\'re low on cream, order five kilos".'}
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {state.stock.map((e, i) => (
+                  <StockCard key={i} entry={e} now={now} onDelete={() => deleteStock(e.at)} />
                 ))}
               </div>
             )}

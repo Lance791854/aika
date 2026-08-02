@@ -130,6 +130,35 @@ def recent_notes(limit: int = 5) -> list[dict]:
     return list(reversed(_load()["notes"]))[:limit]
 
 
+def add_stock(item: str, quantity: str = "", urgency: str = "normal") -> None:
+    data = _load()
+    data.setdefault("stock", []).append(
+        {
+            "at": time.time(),
+            "item": item,
+            "quantity": quantity,
+            "urgency": urgency.lower(),
+        }
+    )
+    _save(data)
+
+
+def recent_stock(limit: int = 10) -> list[dict]:
+    return list(reversed(_load().get("stock", [])))[:limit]
+
+
+def delete_stock(at: float) -> None:
+    data = _load()
+    data["stock"] = [e for e in data.get("stock", []) if e.get("at") != at]
+    _save(data)
+
+
+def clear_stock() -> None:
+    data = _load()
+    data["stock"] = []
+    _save(data)
+
+
 def last_alerted() -> dict[str, float]:
     """Per-location timestamps of the last spoken re-alert."""
     return _load().get("alerts", {})
@@ -168,6 +197,17 @@ def shift_summary() -> str:
         parts.append("Notes. " + ". ".join(n["text"] for n in reversed(notes)) + ".")
     else:
         parts.append("No notes.")
+    stock = recent_stock(10)
+    if stock:
+        bits = []
+        for e in reversed(stock):
+            b = e["item"]
+            if e["quantity"]:
+                b += f", {e['quantity']}"
+            if e["urgency"] == "urgent":
+                b += ", urgent"
+            bits.append(b)
+        parts.append("Stock needed. " + ". ".join(bits) + ".")
     unhandled = recent_unhandled(10)
     if unhandled:
         n = len(unhandled)

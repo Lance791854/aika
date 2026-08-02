@@ -10,7 +10,8 @@ import time
 from pathlib import Path
 
 import pytest
-from livekit.agents import AgentSession, inference
+from livekit.agents import AgentSession
+from livekit.plugins import groq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -24,8 +25,8 @@ def _isolate_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "DATA_PATH", tmp_path / "aika.json")
 
 
-def _llm() -> inference.LLM:
-    return inference.LLM(model="openai/gpt-4.1-mini")
+def _llm() -> groq.LLM:
+    return groq.LLM(model="llama-3.3-70b-versatile")
 
 
 @pytest.mark.asyncio

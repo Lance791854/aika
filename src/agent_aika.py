@@ -543,8 +543,13 @@ class Assistant(Agent):
             Locations are things like "freezer", "fridge", "chicken", "lamb". Negative numbers are fine for frozen items.
             When they ask "what was the freezer at" or "check the fridge temperature", use the check_temperature tool.
 
-            Notes. When a chef says something like "make a note we're out of butter" or "remind the morning shift to defrost the lamb", use the add_note tool. This is for anything they want remembered later — out-of-stock items, handovers, messages for other shifts. If they give a specific time delay, that is a reminder, not a note — use set_reminder.
+            Notes. When a chef says something like "make a note we're out of butter" or "remind the morning shift to defrost the lamb", use the add_note tool. This is for anything they want remembered later — handovers, messages for other shifts. If they give a specific time delay, that is a reminder, not a note — use set_reminder.
             When they ask "what notes do we have", "what are we out of", or "what did I say to do", use the list_notes tool.
+
+            Stock. When a chef says they are low on something or something needs ordering — like "we're low on cream, order five kilos" — use the request_stock tool. Mark it urgent if they say so. But if they explicitly say "make a note", use add_note instead.
+            When they ask "what stock do we need" or "what needs ordering", use the list_stock tool.
+
+            Deleting. When a chef asks to delete or remove a note, use the delete_note tool with a keyword from it. For a stock request, use delete_stock_request. Both read the item back and ask for confirmation. When the chef then answers yes or no, immediately call confirm_delete. Never delete anything without asking first.
 
             Shift summary. When a chef asks for "the shift summary", "end of shift report", or "what happened this shift", use the shift_summary tool.
 
@@ -555,6 +560,7 @@ class Assistant(Agent):
         )
         self.timers: dict = {}
         self.reminders: dict = {}
+        self._pending_delete: tuple[str, dict] | None = None
         self._wake_mode = wake_mode
         self._wake_open_until = 0.0
         self._publish = publish_fn or (lambda p: None)
@@ -581,6 +587,7 @@ class Assistant(Agent):
                     for t, r in self.reminders.items()
                 ],
                 "temperatures": temps,
+                "stock": storage.recent_stock(5),
                 "notes": storage.recent_notes(5),
                 "unhandled": storage.recent_unhandled(5),
             }
@@ -818,6 +825,125 @@ class Assistant(Agent):
             # last few only — chefs don't want a wall of text
             recent = [n["text"] for n in notes[-5:]]
             await context.session.say(". ".join(recent))
+        raise StopResponse()
+
+    @function_tool
+    async def request_stock(
+        self,
+        context: RunContext,
+        item: str,
+        quantity: str = "",
+        urgency: str = "normal",
+    ):
+        """Log stock that needs ordering — the chef is low on or out of something.
+
+        Args:
+            item: What needs ordering, like "cream"
+            quantity: How much, like "five kilos" (optional)
+            urgency: "urgent" if needed immediately, otherwise "normal"
+        """
+        storage.add_stock(item, quantity, urgency)
+        logger.info(f"stock request: {item} {quantity} [{urgency}]")
+        self._emit_state()
+        reply = f"Stock request logged. {item}"
+        if quantity:
+            reply += f", {quantity}"
+        if urgency.lower() == "urgent":
+            reply += ", urgent"
+        await context.session.say(reply + ".")
+        raise StopResponse()
+
+    @function_tool
+    async def list_stock(self, context: RunContext):
+        """Read back the pending stock requests."""
+        stock = storage.recent_stock(10)
+        if not stock:
+            await context.session.say("No stock requests.")
+        else:
+            bits = []
+            for e in reversed(stock):
+                b = e["item"]
+                if e["quantity"]:
+                    b += f", {e['quantity']}"
+                if e["urgency"] == "urgent":
+                    b += ", urgent"
+                bits.append(b)
+            await context.session.say("Stock needed. " + ". ".join(bits) + ".")
+        raise StopResponse()
+
+    @function_tool
+    async def delete_note(self, context: RunContext, keyword: str):
+        """Start deleting a saved note. Reads the matching note back and asks
+        the chef to confirm — nothing is deleted until they say yes.
+
+        Args:
+            keyword: A word from the note, like "butter"
+        """
+        match = next(
+            (
+                n
+                for n in storage.recent_notes(50)
+                if keyword.lower() in n["text"].lower()
+            ),
+            None,
+        )
+        if not match:
+            await context.session.say(f"No note about {keyword}.")
+        else:
+            self._pending_delete = ("note", match)
+            await context.session.say(f"Delete the note, {match['text']}? Yes or no.")
+        raise StopResponse()
+
+    @function_tool
+    async def delete_stock_request(self, context: RunContext, keyword: str):
+        """Start deleting a stock request. Reads it back and asks the chef to
+        confirm — nothing is deleted until they say yes.
+
+        Args:
+            keyword: A word from the request, like "cream"
+        """
+        match = next(
+            (
+                e
+                for e in storage.recent_stock(50)
+                if keyword.lower() in e["item"].lower()
+            ),
+            None,
+        )
+        if not match:
+            await context.session.say(f"No stock request for {keyword}.")
+        else:
+            self._pending_delete = ("stock", match)
+            await context.session.say(
+                f"Delete the stock request for {match['item']}? Yes or no."
+            )
+        raise StopResponse()
+
+    @function_tool
+    async def confirm_delete(self, context: RunContext, confirmed: bool):
+        """Finish a pending deletion. Call this immediately when the chef
+        answers yes (confirmed=True) or no (confirmed=False) after being
+        asked to confirm a delete.
+
+        Args:
+            confirmed: True if the chef said yes, False if they said no
+        """
+        if not self._pending_delete:
+            await context.session.say("Nothing waiting to be deleted.")
+            raise StopResponse()
+        kind, entry = self._pending_delete
+        self._pending_delete = None
+        if not confirmed:
+            await context.session.say("Kept it.")
+            raise StopResponse()
+        if kind == "note":
+            storage.delete_note(entry["at"])
+            await context.session.say("Note deleted.")
+        else:
+            storage.delete_stock(entry["at"])
+            await context.session.say("Stock request deleted.")
+        logger.info(f"deleted {kind}: {entry}")
+        self._emit_state()
         raise StopResponse()
 
     @function_tool
@@ -1067,6 +1193,12 @@ async def entrypoint(ctx: JobContext):
             assistant._emit_state()
         elif t == "delete_note":
             storage.delete_note(payload.get("at"))
+            assistant._emit_state()
+        elif t == "clear_stock":
+            storage.clear_stock()
+            assistant._emit_state()
+        elif t == "delete_stock":
+            storage.delete_stock(payload.get("at"))
             assistant._emit_state()
         elif t == "clear_temps":
             storage.clear_temperatures()
