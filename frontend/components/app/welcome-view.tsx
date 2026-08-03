@@ -30,6 +30,8 @@ interface WelcomeViewProps {
   setWake: (v: WakeMode) => void;
   compare: boolean;
   setCompare: (v: boolean) => void;
+  chef: string;
+  setChef: (v: string) => void;
 }
 
 // Where each option actually runs: hosted API, Cloudflare, our CPU VPS, or the RunPod GPU.
@@ -102,6 +104,8 @@ export const WelcomeView = ({
   setWake,
   compare,
   setCompare,
+  chef,
+  setChef,
   ref,
 }: React.ComponentProps<'div'> & WelcomeViewProps) => {
   return (
@@ -112,6 +116,19 @@ export const WelcomeView = ({
         <h1 className="text-foreground text-2xl font-bold tracking-tight">AIKA</h1>
 
         <div className="mt-6 flex w-[26rem] max-w-[calc(100vw-2rem)] flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground w-12 text-left font-mono text-xs tracking-wider uppercase">
+              Chef
+            </span>
+            <input
+              type="text"
+              value={chef}
+              onChange={(e) => setChef(e.target.value)}
+              placeholder="chef's name"
+              maxLength={24}
+              className="bg-muted text-foreground placeholder:text-muted-foreground flex-1 rounded-md px-3 py-1.5 text-xs outline-none"
+            />
+          </div>
           <StackPickerRow
             label="STT"
             value={stack.stt}

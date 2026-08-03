@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { TokenSource } from 'livekit-client';
 import { useSession } from '@livekit/components-react';
 import { WarningIcon } from '@phosphor-icons/react/dist/ssr';
@@ -37,6 +37,14 @@ export function App({ appConfig }: AppProps) {
   const [debug, setDebug] = useState<boolean>(false);
   const [wake, setWake] = useState<WakeMode>('off');
   const [compare, setCompare] = useState<boolean>(false);
+  // chef name: saves live under this name, remembered per browser
+  const [chef, setChef] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem('aika-chef') ?? '';
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') window.localStorage.setItem('aika-chef', chef);
+  }, [chef]);
 
   // Keep refs to the latest values so the TokenSource callback closure always
   // reads the current dropdown values — useMemo runs once, but the callback
@@ -47,6 +55,8 @@ export function App({ appConfig }: AppProps) {
   wakeRef.current = wake;
   const compareRef = useRef(compare);
   compareRef.current = compare;
+  const chefRef = useRef(chef);
+  chefRef.current = chef;
 
   const tokenSource = useMemo(() => {
     if (typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string') {
@@ -63,6 +73,7 @@ export function App({ appConfig }: AppProps) {
           stack: stackRef.current,
           wake: wakeRef.current,
           compare: compareRef.current,
+          chef: chefRef.current,
         }),
       });
       if (!res.ok) throw new Error(`token fetch failed: ${res.status}`);
@@ -89,6 +100,8 @@ export function App({ appConfig }: AppProps) {
           setWake={setWake}
           compare={compare}
           setCompare={setCompare}
+          chef={chef}
+          setChef={setChef}
         />
       </main>
       <StartAudioButton label="Start Audio" />

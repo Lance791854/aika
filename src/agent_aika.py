@@ -995,9 +995,12 @@ async def entrypoint(ctx: JobContext):
         wake_mode = "strict"
     if wake_mode not in ("off", "strict", "device"):
         wake_mode = "off"
+    # each chef gets their own saves; blank name lands in the shared default
+    chef = storage.scope_name(str(choices.get("chef", "")))
+    storage.set_scope(chef)
     logger.info(
         f"📋 stack stt={stt_choice} llm={llm_choice} tts={tts_choice}"
-        f" wake_mode={wake_mode}"
+        f" wake_mode={wake_mode} chef={chef or '(shared)'}"
     )
 
     # Publish events over the LiveKit data channel so the frontend debug
@@ -1133,8 +1136,16 @@ async def entrypoint(ctx: JobContext):
 
     assistant = Assistant(wake_mode=wake_mode, publish_fn=_publish)
     await session.start(agent=assistant, room=ctx.room)
-    # initial state dump so the overlay shows what's already saved.
+    # initial state dump so the overlay shows what's already saved. Re-send a
+    # few times — the browser may not be listening yet on the first ones.
     assistant._emit_state()
+
+    async def _state_nudges():
+        for delay in (2, 5, 10):
+            await asyncio.sleep(delay)
+            assistant._emit_state()
+
+    asyncio.create_task(_state_nudges())
 
     # frontend buttons publish to this topic — agent listens and acts.
     async def run_safety_check():
@@ -1177,6 +1188,7 @@ async def entrypoint(ctx: JobContext):
         if t == "get_state":
             # panel asks on mount — the join-time state dump can race past a
             # browser whose listener isn't attached yet.
+            logger.info("panel requested state")
             assistant._emit_state()
         elif t == "check_temps":
             asyncio.create_task(run_safety_check())

@@ -2,10 +2,29 @@
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 
 DATA_PATH = Path(os.environ.get("AIKA_DATA_PATH", "data/aika.json"))
+_BASE_PATH = DATA_PATH
+
+
+def scope_name(chef: str) -> str:
+    """A chef name cleaned down to something safe for a filename."""
+    return re.sub(r"[^a-z0-9]+", "-", chef.lower()).strip("-")[:24].strip("-")
+
+
+def set_scope(chef: str) -> None:
+    """Point storage at one chef's file. Empty name = the shared default.
+
+    Everything is per chef for now. If some things should be shared later
+    (freezer temps, stock), route just those functions at a kitchen file.
+    """
+    global DATA_PATH
+    n = scope_name(chef)
+    DATA_PATH = _BASE_PATH.with_name(f"aika-chef-{n}.json") if n else _BASE_PATH
+
 
 # safe temperature ranges per FSANZ (Food Standards Australia New Zealand).
 # https://www.foodstandards.gov.au/consumer/safety/temperature

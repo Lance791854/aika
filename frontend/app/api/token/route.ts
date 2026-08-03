@@ -57,11 +57,18 @@ export async function POST(req: Request) {
         v === 'cloud' || v === 'local' || v === 'gpu' || v === 'cartesia' || v === 'cf';
       const validWake = (v: unknown): v is 'off' | 'strict' | 'device' =>
         v === 'off' || v === 'strict' || v === 'device';
-      const meta: Stack & { wake?: string; compare?: boolean } = {};
+      const meta: Stack & { wake?: string; compare?: boolean; chef?: string } = {};
       if (valid(body.stack?.stt)) meta.stt = body.stack.stt;
       if (valid(body.stack?.llm)) meta.llm = body.stack.llm;
       if (valid(body.stack?.tts)) meta.tts = body.stack.tts;
       if (validWake(body.wake)) meta.wake = body.wake;
+      if (typeof body.chef === 'string' && body.chef.trim()) {
+        meta.chef = body.chef
+          .toLowerCase()
+          .replace(/[^a-z0-9- ]/g, '')
+          .trim()
+          .slice(0, 24);
+      }
       if (typeof body.compare === 'boolean') meta.compare = body.compare;
       roomConfig = new RoomConfiguration({
         agents: [new RoomAgentDispatch({ metadata: JSON.stringify(meta) })],

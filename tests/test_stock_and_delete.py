@@ -58,6 +58,26 @@ def test_shift_summary_includes_stock() -> None:
     assert "urgent" in text
 
 
+def test_scope_name_cleans_input() -> None:
+    assert storage.scope_name("Lance") == "lance"
+    assert storage.scope_name("Chef Marco!") == "chef-marco"
+    assert storage.scope_name("  ") == ""
+    assert len(storage.scope_name("x" * 99)) == 24
+
+
+def test_set_scope_isolates_chefs(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "_BASE_PATH", tmp_path / "aika.json")
+    storage.set_scope("lance")
+    storage.add_note("lance's note")
+    storage.set_scope("marco")
+    assert storage.recent_notes() == []
+    storage.add_note("marco's note")
+    storage.set_scope("lance")
+    assert [n["text"] for n in storage.recent_notes()] == ["lance's note"]
+    storage.set_scope("")  # back to the shared default
+    assert storage.recent_notes() == []
+
+
 # --- behavioral (LLM chooses the tool) ---
 
 

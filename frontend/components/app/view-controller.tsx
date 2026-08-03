@@ -42,6 +42,8 @@ interface ViewControllerProps {
   setWake: (v: WakeMode) => void;
   compare: boolean;
   setCompare: (v: boolean) => void;
+  chef: string;
+  setChef: (v: string) => void;
 }
 
 export function ViewController({
@@ -54,6 +56,8 @@ export function ViewController({
   setWake,
   compare,
   setCompare,
+  chef,
+  setChef,
 }: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
   const { resolvedTheme } = useTheme();
@@ -75,6 +79,8 @@ export function ViewController({
           setWake={setWake}
           compare={compare}
           setCompare={setCompare}
+          chef={chef}
+          setChef={setChef}
         />
       )}
       {/* Session view */}
