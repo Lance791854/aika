@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDataChannel } from '@livekit/components-react';
 
 type ActiveTimer = { name: string; end_time: number };
@@ -276,11 +276,14 @@ export function LiveStatePanel() {
     return () => clearInterval(id);
   }, []);
 
+  const gotState = useRef(false);
+
   const { send } = useDataChannel('aika-debug', (msg) => {
     try {
       const text = new TextDecoder().decode(msg.payload);
       const parsed = JSON.parse(text);
       if (parsed.type === 'state') {
+        gotState.current = true;
         const ev = parsed as StateEvent;
         setState({
           timers: ev.timers ?? [],
@@ -295,6 +298,26 @@ export function LiveStatePanel() {
       // ignore
     }
   });
+
+  // The agent dumps state once on join, which can arrive before this
+  // component is listening. Ask for it until the first snapshot lands.
+  useEffect(() => {
+    let tries = 0;
+    const id = setInterval(() => {
+      if (gotState.current || tries++ >= 5) {
+        clearInterval(id);
+        return;
+      }
+      try {
+        send(new TextEncoder().encode(JSON.stringify({ type: 'get_state' })), {
+          reliable: true,
+        });
+      } catch {
+        // data channel not up yet — try again next tick
+      }
+    }, 1500);
+    return () => clearInterval(id);
+  }, [send]);
 
   const runSafetyCheck = () => {
     const payload = new TextEncoder().encode(JSON.stringify({ type: 'check_temps' }));

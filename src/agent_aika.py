@@ -1174,7 +1174,11 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             return
         t = payload.get("type")
-        if t == "check_temps":
+        if t == "get_state":
+            # panel asks on mount — the join-time state dump can race past a
+            # browser whose listener isn't attached yet.
+            assistant._emit_state()
+        elif t == "check_temps":
             asyncio.create_task(run_safety_check())
         elif t == "inject_temp":
             asyncio.create_task(
@@ -1244,6 +1248,8 @@ async def entrypoint(ctx: JobContext):
             for d in due:
                 storage.mark_alerted(d["location"])
             logger.info(f"re-alerting: {[d['location'] for d in due]}")
+            # keep the panel showing what the voice is warning about
+            assistant._emit_state()
             try:
                 await session.say(
                     "Warning. "
