@@ -148,7 +148,7 @@ export const WelcomeView = ({
               { value: 'cloud', label: 'Llama 70B Groq', tier: 'API' },
               { value: 'local', label: 'Qwen2.5 7B', tier: 'CPU' },
               { value: 'gpu', label: 'Qwen3 8B', tier: 'GPU' },
-              { value: 'cf', label: 'Llama 70B CF', tier: 'CF API' },
+              { value: 'cf', label: 'Llama-4 17B', tier: 'CF API' },
             ]}
             onChange={(v) => setStack({ ...stack, llm: v })}
           />

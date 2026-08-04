@@ -6,12 +6,13 @@ Two layers:
   request AIKA can't fulfil, and must NOT call it for a normal one.
 """
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
 from livekit.agents import AgentSession
-from livekit.plugins import groq
+from livekit.plugins import groq, openai
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -25,7 +26,15 @@ def _isolate_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "DATA_PATH", tmp_path / "aika.json")
 
 
-def _llm() -> groq.LLM:
+def _llm():
+    """Judge LLM. Groq free tier by default; set AIKA_TEST_LLM=cf to use
+    Cloudflare when Groq's daily cap runs out."""
+    if os.environ.get("AIKA_TEST_LLM") == "cf":
+        return openai.LLM(
+            base_url=agent_aika.CF_BASE_URL,
+            api_key=agent_aika.CF_API_TOKEN,
+            model=agent_aika.CF_LLM_MODEL,
+        )
     return groq.LLM(model="llama-3.3-70b-versatile")
 
 

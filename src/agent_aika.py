@@ -46,6 +46,22 @@ import storage
 
 logger = logging.getLogger("agent_aika")
 
+# Cloudflare sometimes streams a bare number token as a JSON int and LiveKit's
+# thinking-token stripper crashes on it ('int' has no .find). Coerce to str.
+try:
+    from livekit.agents.llm import utils as _llm_utils
+
+    _orig_strip = _llm_utils.strip_thinking_tokens
+
+    def _safe_strip(content, thinking):
+        if content is not None and not isinstance(content, str):
+            content = str(content)
+        return _orig_strip(content, thinking)
+
+    _llm_utils.strip_thinking_tokens = _safe_strip
+except (ImportError, AttributeError):
+    pass
+
 load_dotenv(".env.local")
 
 
@@ -79,8 +95,9 @@ GPU_TTS_VOICE = "af_bella"  # same voice as the CPU stack, for clean A/B
 CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "")
 CF_API_TOKEN = os.getenv("CF_API_TOKEN", "")
 CF_BASE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/v1"
-# same model Groq serves — lets us compare providers on equal footing
-CF_LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+# Llama-4 Scout: CF's llama-3.3-70b streams tool calls as plain text, which
+# the voice pipeline then reads aloud. Scout streams real tool calls.
+CF_LLM_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
 CF_RUN_URL = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run"
 # same models Deepgram serves directly — provider-vs-provider comparison
 CF_STT_MODEL = "@cf/deepgram/nova-3"
@@ -536,8 +553,9 @@ class Assistant(Agent):
             When they say "cancel steak timer", use the cancel_timer tool.
 
             Reminders. When a chef gives a task WITH a time delay, like "remind me in 20 minutes to rotate the stock", use the set_reminder tool. You will speak the reminder aloud when the time is up.
-            When they ask "what reminders are set", use the check_reminders tool. When they say "cancel the stock reminder", use the cancel_reminder tool.
+            When they ask "what reminders are set", always use the check_reminders tool — never answer from memory, one may have already gone off. When they say "cancel the stock reminder", use the cancel_reminder tool.
             If no time is given — like "remind the morning shift to defrost the lamb" — that is a note, not a reminder. Use add_note and never invent a delay.
+            If they give a time but no task — like "set reminder two minutes" — set the reminder anyway with empty text. Never ask what it's for.
 
             Temperatures. When a chef says something like "log the freezer at minus eighteen" or "fridge is four degrees", use the log_temperature tool.
             Locations are things like "freezer", "fridge", "chicken", "lamb". Negative numbers are fine for frozen items.
@@ -693,17 +711,19 @@ class Assistant(Agent):
         raise StopResponse()
 
     @function_tool
-    async def set_reminder(self, context: RunContext, text: str, minutes: float):
+    async def set_reminder(self, context: RunContext, minutes: float, text: str = ""):
         """Set a timed reminder that will be spoken aloud when the time is up.
 
         Only for requests with an explicit delay, like "remind me in 20 minutes".
         If the chef gave no time, use add_note instead — never guess the minutes.
 
         Args:
-            text: What to remind about, like "rotate the stock"
             minutes: How many minutes from now to speak the reminder
+            text: What to remind about, like "rotate the stock". Leave empty
+                if the chef didn't say — never ask, just set it.
         """
-        key = text.lower()
+        label = text.strip()
+        key = (label or "reminder").lower()
         if key in self.reminders:
             self.reminders[key]["task"].cancel()
 
@@ -712,14 +732,17 @@ class Assistant(Agent):
         async def reminder_callback():
             await asyncio.sleep(minutes * 60)
             del self.reminders[key]
-            await context.session.say(f"Reminder. {text}.")
-            logger.info(f"Reminder fired: {text}")
+            if label:
+                await context.session.say(f"Reminder. {label}.")
+            else:
+                await context.session.say("Reminder. Time's up.")
+            logger.info(f"Reminder fired: {label or '(no text)'}")
             self._emit_state()
 
         task = asyncio.create_task(reminder_callback())
         self.reminders[key] = {"end_time": end_time, "task": task}
 
-        logger.info(f"Reminder set: {text} in {minutes} minutes")
+        logger.info(f"Reminder set: {label or '(no text)'} in {minutes} minutes")
         self._emit_state()
         m = int(minutes) if minutes == int(minutes) else minutes
         unit = "minute" if m == 1 else "minutes"

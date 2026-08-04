@@ -5,6 +5,7 @@ minute. Each behavioral test burns ~5k, so pause after each one to keep a
 full suite run under the limit. Storage-only tests are unaffected.
 """
 
+import os
 import time
 
 import pytest
@@ -23,4 +24,4 @@ def _groq_free_tier_pacing(request):
     is_llm_module = request.node.module.__name__ in LLM_TEST_MODULES
     is_behavioral = request.node.get_closest_marker("asyncio") is not None
     if is_llm_module and is_behavioral:
-        time.sleep(25)
+        time.sleep(5 if os.environ.get("AIKA_TEST_LLM") == "cf" else 25)
