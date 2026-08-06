@@ -35,7 +35,7 @@ load_dotenv(".env.local")
 
 
 # Self-hosted endpoints reached over the SSH tunnel:
-#   ssh -L 11434:localhost:11434 -L 8000:localhost:8000 -L 9000:localhost:9000 -N debian@<inference-host>
+#   ssh -L 11434:localhost:11434 -L 8000:localhost:8000 -L 9000:localhost:9000 -N <user>@<inference-host>
 OLLAMA_URL = "http://localhost:11434/v1"
 SPEACHES_URL = "http://localhost:8000/v1"
 # Parakeet wrapper (see inference/parakeet/). Override with the RunPod

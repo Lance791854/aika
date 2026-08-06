@@ -13,12 +13,13 @@ speaks back unprompted when something needs attention.
 - **Stock requests** — `"we're low on cream, order five kilos, urgent"` / `"what stock do we need"`. Shown in the panel and the shift summary.
 - **Deleting** — `"delete the note about butter"`. AIKA reads it back and asks yes or no first. Works for notes and stock requests.
 - **Notes** — `"make a note we're out of butter"` / `"what notes do we have"` / `"what are we out of"`
-- **Shift summary** — `"give me the shift summary"`. Spoken end-of-shift report: latest temp per location (flagging anything out of range), notes, and a count of unhandled requests.
+- **Shift summary** — `"give me the shift summary"`. Spoken end-of-shift report: latest temp per location (flagging anything out of range), notes and stock requests.
+- **Per-chef sessions** — enter a name on the start screen and your timers, notes and temps save to your own session. Leave it blank for the shared one.
 - **Wake modes** — always reply / only reply when addressed by name (`"AIKA ..."` or `"hey AIKA ..."`). Saying just `"AIKA"` and pausing opens a 10-second window for the follow-up command.
 - **Wearable sim** — a wake mode that works like the planned ESP32 wearable. A small local model listens for `"AIKA"`. Until it hears it, nothing is sent to the STT or LLM at all.
-- **Status panel** — fixed side panel during the call. Running timers with countdown, latest temperature per location, latest notes. Out-of-range temps go red. Includes a button to run a safety check (AIKA scans recent readings and speaks any warnings), plus per-card buttons to inject fake low/ok/high readings for testing the alerts.
+- **Status panel** — fixed side panel during the call. Running timers with countdown, reminders, latest temperature per location, stock requests, latest notes. Out-of-range temps go red. Includes a button to run a safety check (AIKA scans recent readings and speaks any warnings), plus per-card buttons to inject fake low/ok/high readings for testing the alerts.
 - **Debug overlay** — per-turn STT / LLM / TTS timings, transcripts, tool calls
-- **Per-call stack toggle** — pick cloud or self-hosted for each of STT / LLM / TTS independently. Defaults to cloud. Choices ride in the agent dispatch metadata.
+- **Per-call stack toggle** — pick a provider for each of STT / LLM / TTS independently: cloud APIs, Cartesia, self-hosted CPU, self-hosted GPU, or Cloudflare Workers AI. Defaults to cloud. Choices ride in the agent dispatch metadata.
 
 ## Layout
 
@@ -26,10 +27,11 @@ speaks back unprompted when something needs attention.
 src/
   agent.py        Clean cloud-only reference. 3 timer tools. Forkable starting point.
   agent_local.py  Debug variant. CompareSTT lets you A/B multiple STT engines (incl Voxtral) on the same mic audio.
-  agent_aika.py   Production agent. Reads ctx.job.metadata, picks plugins per call, all 7 tools, safety check listener.
-  storage.py      JSON-file persistence for temperatures + notes. FSANZ ranges baked in.
+  agent_aika.py   Production agent. Reads ctx.job.metadata, picks plugins per call, all 17 tools, safety check listener.
+  storage.py      JSON-file persistence for temperatures, notes, stock and reminders, per chef. FSANZ ranges baked in.
 frontend/         Next.js, forked from LiveKit's agent-starter-react. Toggles, status panel, debug overlay.
-tests/            LLM-as-judge evals (friendliness, grounding, refusal).
+inference/        Parakeet STT wrapper for the GPU pod (OpenAI-compatible FastAPI server).
+tests/            Behavior tests. Storage and wake logic run offline, agent behavior uses an LLM judge.
 ```
 
 ## Architecture
@@ -46,27 +48,41 @@ tests/            LLM-as-judge evals (friendliness, grounding, refusal).
      ▼
   aika-worker (Python)
      │
-     ├── Cloud APIs: Deepgram / Groq / Cartesia
-     └── Self-hosted: Ollama + Speaches
+     ├── Cloud APIs:   Deepgram / Groq / Cartesia
+     ├── Cloudflare:   Workers AI (nova-3 / llama-4-scout / aura-2)
+     ├── CPU box:      Ollama + Speaches
+     └── GPU pod:      Parakeet + Ollama qwen3 + Kokoro (RunPod)
 ```
 
 The worker stays alive as a pm2 process. The frontend is a static `next start` behind Caddy
-for HTTPS. The inference services are optional.
+for HTTPS. Everything below the worker is optional: with just the cloud API keys you get the
+full agent.
+
+Note: this repo deploys via pm2 on a plain VPS.
 
 ## Setup
 
 Backend (agent + tests) needs Python 3.10+ and [`uv`](https://github.com/astral-sh/uv):
 
 ```bash
+# install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 uv sync
 cp .env.example .env.local
-# Add LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET
-# and provider keys you actually want: DEEPGRAM_API_KEY, GROQ_API_KEY, CARTESIA_API_KEY
 ```
+
+Open `.env.local` and add your own keys. Required: `LIVEKIT_URL`, `LIVEKIT_API_KEY`,
+`LIVEKIT_API_SECRET` (from a free [LiveKit Cloud](https://cloud.livekit.io/) project) plus
+`DEEPGRAM_API_KEY`, `GROQ_API_KEY` and `CARTESIA_API_KEY` for the default cloud stack.
+The rest are optional and only needed for the extra stack toggles.
 
 Frontend needs Node 20+ and [`pnpm`](https://pnpm.io/):
 
 ```bash
+# install pnpm if you don't have it
+npm install -g pnpm
+
 cd frontend
 pnpm install
 cp .env.example .env.local
@@ -75,7 +91,7 @@ cp .env.example .env.local
 
 ## Run
 
-Three terminals for the full setup:
+Two terminals:
 
 ```bash
 # 1. Production agent worker
@@ -83,15 +99,18 @@ uv run python src/agent_aika.py dev
 
 # 2. Frontend dev server
 cd frontend && pnpm dev
-
-# 3. Optional: SSH tunnel to the self-hosted inference box,
-#    so the "local" stack toggles actually reach Ollama + Speaches
-ssh -L 11434:localhost:11434 -L 8000:localhost:8000 -N <user>@<inference-host>
 ```
 
 Then open http://localhost:3000, pick a stack, click Start.
 
-Just the cloud reference agent (no inference setup):
+If you use the self-hosted toggles, either set `AIKA_INFERENCE_HOST` in `.env.local` to the
+box running Ollama + Speaches, or tunnel it to localhost:
+
+```bash
+ssh -L 11434:localhost:11434 -L 8000:localhost:8000 -N <user>@<inference-host>
+```
+
+Just the cloud reference agent (no toggles, no panel):
 
 ```bash
 uv run python src/agent.py dev
@@ -110,10 +129,14 @@ The "local" toggles route to:
 - **Ollama** on `:11434` running `aika-llm` (qwen2.5:7b with `PARAMETER num_thread 8`)
 - **Speaches** on `:8000` serving `Systran/faster-whisper-medium` (STT) and `speaches-ai/Kokoro-82M-v1.0-ONNX` (TTS)
 
-Both can live on any machine the agent worker can reach. URLs are in `src/agent_aika.py`.
+The "GPU" toggles route to a RunPod pod running Parakeet STT (served by `inference/parakeet/`),
+qwen3:8b on Ollama and Kokoro-FastAPI. Endpoints are set with `AIKA_GPU_STT_URL`,
+`AIKA_GPU_LLM_URL` and `AIKA_GPU_TTS_URL`, defaulting to a tunnel on localhost 9000/11435/8880.
 
-If the inference box is exposed to the public internet, lock the ports down to just the
-agent worker's IP.
+The Cloudflare toggles need `CF_ACCOUNT_ID` and `CF_API_TOKEN`.
+
+All of these can live on any machine the agent worker can reach. If a box is exposed to the
+public internet, lock the ports down to just the agent worker's IP.
 
 ## Tests
 
@@ -121,10 +144,18 @@ agent worker's IP.
 uv run pytest
 ```
 
-The behavior tests use Groq `llama-3.3-70b-versatile` as the judge, so they need `GROQ_API_KEY`.
-Groq has a free tier, that is why we use it. The free tier has a small per minute limit, so the
-suite pauses between tests and takes a few minutes. If you have OpenAI credits you can swap the
-judge in `tests/` back to `gpt-4.1-mini`, it runs faster.
+Storage, wake-word and temperature-monitor tests run offline with no keys.
+
+The agent behavior tests use Groq `llama-3.3-70b-versatile` as the judge, so they need
+`GROQ_API_KEY`. Groq has a free tier, that is why we use it. The free tier has a small per
+minute limit, so the suite pauses between tests and takes a few minutes. `tests/test_agent.py`
+judges with `gpt-4.1-mini` through LiveKit inference instead.
+
+`tests/test_parakeet_server.py` skips itself unless the server deps are installed. To run it:
+
+```bash
+uv run --with fastapi --with httpx --with soundfile --with numpy pytest tests/test_parakeet_server.py
+```
 
 ## License
 

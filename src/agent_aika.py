@@ -66,13 +66,15 @@ load_dotenv(".env.local")
 
 
 # ---------------------------------------------------------------------------
-# Self-hosted inference endpoints. The DOCKER-USER iptables rule on
-# <inference-host> allows traffic to these ports ONLY from this VPS
-# (<frontend-host>). Anyone else gets dropped.
+# Self-hosted inference endpoints. Set AIKA_INFERENCE_HOST in .env.local to
+# the box running Ollama + Speaches. Defaults to localhost, which works with
+# the SSH tunnel from the README. The DOCKER-USER iptables rule on the
+# inference box allows these ports ONLY from the agent VPS.
 # ---------------------------------------------------------------------------
-LOCAL_OLLAMA_URL = "http://<inference-host>:11434/v1"
-LOCAL_SPEACHES_URL = "http://<inference-host>:8000/v1"
-LOCAL_LLM_MODEL = "aika-llm"  # custom variant of qwen2.5:3b with num_thread=8
+INFERENCE_HOST = os.getenv("AIKA_INFERENCE_HOST", "localhost")
+LOCAL_OLLAMA_URL = f"http://{INFERENCE_HOST}:11434/v1"
+LOCAL_SPEACHES_URL = f"http://{INFERENCE_HOST}:8000/v1"
+LOCAL_LLM_MODEL = "aika-llm"  # custom variant of qwen2.5:7b with num_thread=8
 # Multilingual whisper-medium is the realistic CPU floor for "works in demo":
 # ~5-7s/utterance, accent-tolerant. large-v3 is 17-20s — too slow to feel live.
 LOCAL_STT_MODEL = "Systran/faster-whisper-medium"

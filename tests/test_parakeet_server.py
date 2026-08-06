@@ -5,8 +5,9 @@ inference — HTTP shape, audio decode/mono/resample, response_format, and the
 NeMo-return unwrapping — with no GPU or NeMo install. The real model is only
 exercised on the RunPod pod.
 
-Run: uv run --with fastapi --with httpx --with soundfile --with numpy \
-       pytest tests/test_parakeet_server.py
+Skipped unless the server deps are installed:
+  uv run --with fastapi --with httpx --with soundfile --with numpy \
+    pytest tests/test_parakeet_server.py
 """
 
 import io
@@ -14,16 +15,18 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
-import soundfile as sf
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "inference" / "parakeet"))
-
-import server  # noqa: E402
-
+np = pytest.importorskip("numpy")
+sf = pytest.importorskip("soundfile")
 fastapi_testclient = pytest.importorskip("fastapi.testclient")
 TestClient = fastapi_testclient.TestClient
+
+sys.path.insert(
+    0, str(Path(__file__).resolve().parent.parent / "inference" / "parakeet")
+)
+
+import server  # noqa: E402
 
 
 class _FakeHyp:
