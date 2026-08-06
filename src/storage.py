@@ -178,6 +178,31 @@ def clear_stock() -> None:
     _save(data)
 
 
+def add_label(item: str, days: float = 3) -> None:
+    """A food safety label: item, made now, use by `days` from now."""
+    data = _load()
+    data.setdefault("labels", []).append(
+        {"at": time.time(), "item": item, "use_by": time.time() + days * 86400}
+    )
+    _save(data)
+
+
+def recent_labels(limit: int = 10) -> list[dict]:
+    return list(reversed(_load().get("labels", [])))[:limit]
+
+
+def delete_label(at: float) -> None:
+    data = _load()
+    data["labels"] = [e for e in data.get("labels", []) if e.get("at") != at]
+    _save(data)
+
+
+def clear_labels() -> None:
+    data = _load()
+    data["labels"] = []
+    _save(data)
+
+
 def last_alerted() -> dict[str, float]:
     """Per-location timestamps of the last spoken re-alert."""
     return _load().get("alerts", {})

@@ -571,6 +571,8 @@ class Assistant(Agent):
 
             Deleting. When a chef asks to delete or remove a note, use the delete_note tool with a keyword from it. For a stock request, use delete_stock_request. Both read the item back and ask for confirmation. When the chef then answers yes or no, immediately call confirm_delete. Never delete anything without asking first.
 
+            Labels. When a chef asks for a food label — like "make a label for the pesto, three days" — use the make_label tool. If they don't say how long it keeps, ask "how many days" and wait for the answer — never guess the days. The label shows in the panel.
+
             Shift summary. When a chef asks for "the shift summary", "end of shift report", or "what happened this shift", use the shift_summary tool.
 
             Unhandled requests. If a chef asks you to DO something that is not a timer, temperature, or note — like placing a supplier order, controlling equipment, playing music, or looking up a recipe — call the log_unhandled tool with a short summary of what they asked, then briefly tell them you can't do that. Do NOT call it for greetings, small talk, thanks, or anything you can just answer in conversation.
@@ -608,6 +610,7 @@ class Assistant(Agent):
                 ],
                 "temperatures": temps,
                 "stock": storage.recent_stock(5),
+                "labels": storage.recent_labels(5),
                 "notes": storage.recent_notes(5),
                 "unhandled": storage.recent_unhandled(5),
             }
@@ -972,6 +975,28 @@ class Assistant(Agent):
         raise StopResponse()
 
     @function_tool
+    async def make_label(
+        self, context: RunContext, item: str, days: float | None = None
+    ):
+        """Make a food safety label: item, made today, use-by date. It shows
+        in the panel.
+
+        Args:
+            item: What the label is for, like "pesto"
+            days: Days until use-by. Never guess — leave it out if the chef
+                didn't say and they will be asked.
+        """
+        if days is None:
+            await context.session.say(f"How many days for the {item}?")
+            raise StopResponse()
+        storage.add_label(item, days)
+        logger.info(f"label: {item}, {days} days")
+        self._emit_state()
+        use_by = time.strftime("%A", time.localtime(time.time() + days * 86400))
+        await context.session.say(f"Label made. {item}, use by {use_by}.")
+        raise StopResponse()
+
+    @function_tool
     async def shift_summary(self, context: RunContext):
         """Read back the end-of-shift summary — temperatures logged, notes, and
         anything AIKA couldn't handle this shift."""
@@ -1234,6 +1259,12 @@ async def entrypoint(ctx: JobContext):
             assistant._emit_state()
         elif t == "delete_note":
             storage.delete_note(payload.get("at"))
+            assistant._emit_state()
+        elif t == "clear_labels":
+            storage.clear_labels()
+            assistant._emit_state()
+        elif t == "delete_label":
+            storage.delete_label(payload.get("at"))
             assistant._emit_state()
         elif t == "clear_stock":
             storage.clear_stock()

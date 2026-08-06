@@ -11,6 +11,7 @@ speaks back unprompted when something needs attention.
 - **Temperatures** — `"log the freezer at minus eighteen"` / `"what was the freezer at"`. Readings outside [FSANZ](https://www.foodstandards.gov.au/) safe ranges (freezer below -18, fridge 0-5, cooked poultry above 75, etc.) trigger an immediate warning. If no in range reading is logged, AIKA re-warns unprompted every 5 minutes until one is.
 - **Reminders** — `"remind me in twenty minutes to rotate the stock"` / `"what reminders are set"` / `"cancel the stock reminder"`. Spoken aloud unprompted when the time is up. No time given means it's saved as a note instead.
 - **Stock requests** — `"we're low on cream, order five kilos, urgent"` / `"what stock do we need"`. Shown in the panel and the shift summary.
+- **Labels** — `"make a label for the pesto, three days"`. Makes a food safety label with the item, made date and use-by date. If no days are given AIKA asks. Shows in the panel. The print button is a placeholder for now.
 - **Deleting** — `"delete the note about butter"`. AIKA reads it back and asks yes or no first. Works for notes and stock requests.
 - **Notes** — `"make a note we're out of butter"` / `"what notes do we have"` / `"what are we out of"`
 - **Shift summary** — `"give me the shift summary"`. Spoken end-of-shift report: latest temp per location (flagging anything out of range), notes and stock requests.

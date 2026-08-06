@@ -14,6 +14,7 @@ type TempEntry = {
 type NoteEntry = { text: string; at: number };
 type UnhandledEntry = { text: string; at: number };
 type StockEntry = { item: string; quantity: string; urgency: string; at: number };
+type LabelEntry = { item: string; at: number; use_by: number };
 
 type StateEvent = {
   type: 'state';
@@ -21,6 +22,7 @@ type StateEvent = {
   reminders: ReminderEntry[];
   temperatures: TempEntry[];
   stock: StockEntry[];
+  labels: LabelEntry[];
   notes: NoteEntry[];
   unhandled: UnhandledEntry[];
 };
@@ -204,6 +206,47 @@ function StockCard({
   );
 }
 
+const fmtDay = (t: number) =>
+  new Date(t * 1000).toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+
+function printLabel(_label: LabelEntry) {
+  // placeholder until a real printer is wired up
+  window.alert('This does nothing currently.');
+}
+
+function LabelCard({ label, onDelete }: { label: LabelEntry; onDelete: () => void }) {
+  return (
+    <div className="border-border/60 bg-card rounded-md border p-2">
+      <div className="flex items-start justify-between gap-1">
+        <div className="min-w-0">
+          <div className="text-foreground truncate text-sm font-medium capitalize">
+            {label.item}
+          </div>
+          <div className="text-muted-foreground text-[10px]">
+            made {fmtDay(label.at)} ·{' '}
+            <span className="text-foreground font-semibold">use by {fmtDay(label.use_by)}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => printLabel(label)}
+            className="text-foreground bg-muted hover:bg-muted/70 rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wider uppercase"
+            title="Print this label"
+          >
+            Print
+          </button>
+          <DeleteX onClick={onDelete} title="Delete label" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NoteCard({ note, now, onDelete }: { note: NoteEntry; now: number; onDelete: () => void }) {
   return (
     <div className="bg-card border-border/60 rounded-md border p-2">
@@ -237,7 +280,7 @@ function UnhandledCard({
 }
 
 interface Section {
-  key: 'timers' | 'reminders' | 'temperatures' | 'stock' | 'notes' | 'unhandled';
+  key: 'timers' | 'reminders' | 'temperatures' | 'stock' | 'labels' | 'notes' | 'unhandled';
   title: string;
   count: number;
   empty: string;
@@ -249,9 +292,18 @@ export function LiveStatePanel() {
     reminders: ReminderEntry[];
     temperatures: TempEntry[];
     stock: StockEntry[];
+    labels: LabelEntry[];
     notes: NoteEntry[];
     unhandled: UnhandledEntry[];
-  }>({ timers: [], reminders: [], temperatures: [], stock: [], notes: [], unhandled: [] });
+  }>({
+    timers: [],
+    reminders: [],
+    temperatures: [],
+    stock: [],
+    labels: [],
+    notes: [],
+    unhandled: [],
+  });
   const [collapsed, setCollapsed] = useState(false);
 
   // hidden-section toggles, persisted across tab in localStorage
@@ -290,6 +342,7 @@ export function LiveStatePanel() {
           reminders: ev.reminders ?? [],
           temperatures: ev.temperatures ?? [],
           stock: ev.stock ?? [],
+          labels: ev.labels ?? [],
           notes: ev.notes ?? [],
           unhandled: ev.unhandled ?? [],
         });
@@ -339,6 +392,8 @@ export function LiveStatePanel() {
   const clearNotes = () => act({ type: 'clear_notes' });
   const clearStock = () => act({ type: 'clear_stock' });
   const deleteStock = (at: number) => act({ type: 'delete_stock', at });
+  const clearLabels = () => act({ type: 'clear_labels' });
+  const deleteLabel = (at: number) => act({ type: 'delete_label', at });
   const deleteNote = (at: number) => act({ type: 'delete_note', at });
   const clearTemps = () => act({ type: 'clear_temps' });
   const deleteTemp = (location: string) => act({ type: 'delete_temp', location });
@@ -367,6 +422,12 @@ export function LiveStatePanel() {
       title: 'Stock',
       count: state.stock.length,
       empty: 'No stock requests.',
+    },
+    {
+      key: 'labels',
+      title: 'Labels',
+      count: state.labels.length,
+      empty: 'No labels yet.',
     },
     {
       key: 'notes',
@@ -549,6 +610,37 @@ export function LiveStatePanel() {
               <div className="flex flex-col gap-1.5">
                 {state.stock.map((e, i) => (
                   <StockCard key={i} entry={e} now={now} onDelete={() => deleteStock(e.at)} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {!hidden.has('labels') && (
+          <section className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
+                Labels
+              </h3>
+              {state.labels.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearLabels}
+                  className="text-foreground bg-muted hover:bg-muted/70 rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wider uppercase"
+                  title="Clear all labels"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {state.labels.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                {'No labels yet. Try "make a label for the pesto, three days".'}
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {state.labels.map((l, i) => (
+                  <LabelCard key={i} label={l} onDelete={() => deleteLabel(l.at)} />
                 ))}
               </div>
             )}
