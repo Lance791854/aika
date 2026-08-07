@@ -97,9 +97,10 @@ GPU_TTS_VOICE = "af_bella"  # same voice as the CPU stack, for clean A/B
 CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "")
 CF_API_TOKEN = os.getenv("CF_API_TOKEN", "")
 CF_BASE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/v1"
-# Llama-4 Scout: CF's llama-3.3-70b streams tool calls as plain text, which
-# the voice pipeline then reads aloud. Scout streams real tool calls.
-CF_LLM_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+# gpt-oss-120b: CF's llama models keep writing tool calls as plain text
+# instead of calling them (3.3-70b always, Scout on temperature phrasing).
+# gpt-oss called the tool correctly on every probe.
+CF_LLM_MODEL = "@cf/openai/gpt-oss-120b"
 CF_RUN_URL = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run"
 # same models Deepgram serves directly — provider-vs-provider comparison
 CF_STT_MODEL = "@cf/deepgram/nova-3"

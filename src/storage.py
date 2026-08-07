@@ -1,10 +1,20 @@
-"""flat-file persistence for temperature logs and notes."""
+"""flat-file persistence for temperature logs and notes.
 
+Several agent processes can share one file (multiple chats, same chef), so
+every change locks the file and writes atomically — otherwise two saves at
+the same moment lose one of the changes, or a half-written file reads back
+as empty.
+"""
+
+import contextlib
 import json
 import os
 import re
+import threading
 import time
 from pathlib import Path
+
+_THREAD_LOCK = threading.Lock()
 
 DATA_PATH = Path(os.environ.get("AIKA_DATA_PATH", "data/aika.json"))
 _BASE_PATH = DATA_PATH
@@ -91,6 +101,45 @@ def overdue_temperatures(
     return due
 
 
+@contextlib.contextmanager
+def _locked():
+    """One writer at a time, across threads and across processes."""
+    lock_path = DATA_PATH.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with _THREAD_LOCK:
+        f = open(lock_path, "a+")
+        try:
+            try:
+                import fcntl
+
+                fcntl.flock(f, fcntl.LOCK_EX)
+            except ImportError:
+                import msvcrt
+
+                # wait as long as it takes — LK_LOCK gives up after ~10s
+                while True:
+                    try:
+                        f.seek(0)
+                        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError:
+                        time.sleep(0.01)
+            yield
+        finally:
+            try:
+                try:
+                    import fcntl
+
+                    fcntl.flock(f, fcntl.LOCK_UN)
+                except ImportError:
+                    import msvcrt
+
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            finally:
+                f.close()
+
+
 def _load() -> dict:
     if not DATA_PATH.exists():
         return {"temperatures": [], "notes": [], "unhandled": []}
@@ -101,16 +150,27 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
+    # write to a temp file then swap it in, so readers never see a half-write
     DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DATA_PATH.write_text(json.dumps(data, indent=2))
+    tmp = DATA_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, DATA_PATH)
+
+
+def _update(mutate) -> None:
+    """Load, change, save — holding the lock the whole time."""
+    with _locked():
+        data = _load()
+        mutate(data)
+        _save(data)
 
 
 def add_temperature(location: str, celsius: float) -> None:
-    data = _load()
-    data["temperatures"].append(
-        {"at": time.time(), "location": location.lower(), "celsius": celsius}
+    _update(
+        lambda d: d["temperatures"].append(
+            {"at": time.time(), "location": location.lower(), "celsius": celsius}
+        )
     )
-    _save(data)
 
 
 def latest_temperature(location: str) -> dict | None:
@@ -122,9 +182,7 @@ def latest_temperature(location: str) -> dict | None:
 
 
 def add_note(text: str) -> None:
-    data = _load()
-    data["notes"].append({"at": time.time(), "text": text})
-    _save(data)
+    _update(lambda d: d["notes"].append({"at": time.time(), "text": text}))
 
 
 def list_notes() -> list[dict]:
@@ -150,16 +208,16 @@ def recent_notes(limit: int = 5) -> list[dict]:
 
 
 def add_stock(item: str, quantity: str = "", urgency: str = "normal") -> None:
-    data = _load()
-    data.setdefault("stock", []).append(
-        {
-            "at": time.time(),
-            "item": item,
-            "quantity": quantity,
-            "urgency": urgency.lower(),
-        }
+    _update(
+        lambda d: d.setdefault("stock", []).append(
+            {
+                "at": time.time(),
+                "item": item,
+                "quantity": quantity,
+                "urgency": urgency.lower(),
+            }
+        )
     )
-    _save(data)
 
 
 def recent_stock(limit: int = 10) -> list[dict]:
@@ -167,24 +225,26 @@ def recent_stock(limit: int = 10) -> list[dict]:
 
 
 def delete_stock(at: float) -> None:
-    data = _load()
-    data["stock"] = [e for e in data.get("stock", []) if e.get("at") != at]
-    _save(data)
+    def m(d):
+        d["stock"] = [e for e in d.get("stock", []) if e.get("at") != at]
+
+    _update(m)
 
 
 def clear_stock() -> None:
-    data = _load()
-    data["stock"] = []
-    _save(data)
+    def m(d):
+        d["stock"] = []
+
+    _update(m)
 
 
 def add_label(item: str, days: float = 3) -> None:
     """A food safety label: item, made now, use by `days` from now."""
-    data = _load()
-    data.setdefault("labels", []).append(
-        {"at": time.time(), "item": item, "use_by": time.time() + days * 86400}
+    _update(
+        lambda d: d.setdefault("labels", []).append(
+            {"at": time.time(), "item": item, "use_by": time.time() + days * 86400}
+        )
     )
-    _save(data)
 
 
 def recent_labels(limit: int = 10) -> list[dict]:
@@ -192,15 +252,17 @@ def recent_labels(limit: int = 10) -> list[dict]:
 
 
 def delete_label(at: float) -> None:
-    data = _load()
-    data["labels"] = [e for e in data.get("labels", []) if e.get("at") != at]
-    _save(data)
+    def m(d):
+        d["labels"] = [e for e in d.get("labels", []) if e.get("at") != at]
+
+    _update(m)
 
 
 def clear_labels() -> None:
-    data = _load()
-    data["labels"] = []
-    _save(data)
+    def m(d):
+        d["labels"] = []
+
+    _update(m)
 
 
 def last_alerted() -> dict[str, float]:
@@ -209,9 +271,11 @@ def last_alerted() -> dict[str, float]:
 
 
 def mark_alerted(location: str, at: float | None = None) -> None:
-    data = _load()
-    data.setdefault("alerts", {})[location.lower()] = time.time() if at is None else at
-    _save(data)
+    _update(
+        lambda d: d.setdefault("alerts", {}).__setitem__(
+            location.lower(), time.time() if at is None else at
+        )
+    )
 
 
 def shift_summary() -> str:
@@ -262,9 +326,11 @@ def shift_summary() -> str:
 
 def add_unhandled(text: str) -> None:
     """Record a request AIKA couldn't fulfil, for reviewing coverage gaps."""
-    data = _load()
-    data.setdefault("unhandled", []).append({"at": time.time(), "text": text})
-    _save(data)
+    _update(
+        lambda d: d.setdefault("unhandled", []).append(
+            {"at": time.time(), "text": text}
+        )
+    )
 
 
 def recent_unhandled(limit: int = 5) -> list[dict]:
@@ -272,40 +338,47 @@ def recent_unhandled(limit: int = 5) -> list[dict]:
 
 
 def clear_unhandled() -> None:
-    data = _load()
-    data["unhandled"] = []
-    _save(data)
+    def m(d):
+        d["unhandled"] = []
+
+    _update(m)
 
 
 def delete_unhandled(at: float) -> None:
-    data = _load()
-    data["unhandled"] = [u for u in data.get("unhandled", []) if u.get("at") != at]
-    _save(data)
+    def m(d):
+        d["unhandled"] = [u for u in d.get("unhandled", []) if u.get("at") != at]
+
+    _update(m)
 
 
 def delete_note(at: float) -> None:
-    data = _load()
-    data["notes"] = [n for n in data.get("notes", []) if n.get("at") != at]
-    _save(data)
+    def m(d):
+        d["notes"] = [n for n in d.get("notes", []) if n.get("at") != at]
+
+    _update(m)
 
 
 def clear_notes() -> None:
-    data = _load()
-    data["notes"] = []
-    _save(data)
+    def m(d):
+        d["notes"] = []
+
+    _update(m)
 
 
 def delete_temperature_location(location: str) -> None:
     """Remove every reading for a location — clears its card entirely."""
     location = location.lower()
-    data = _load()
-    data["temperatures"] = [
-        t for t in data.get("temperatures", []) if t.get("location") != location
-    ]
-    _save(data)
+
+    def m(d):
+        d["temperatures"] = [
+            t for t in d.get("temperatures", []) if t.get("location") != location
+        ]
+
+    _update(m)
 
 
 def clear_temperatures() -> None:
-    data = _load()
-    data["temperatures"] = []
-    _save(data)
+    def m(d):
+        d["temperatures"] = []
+
+    _update(m)

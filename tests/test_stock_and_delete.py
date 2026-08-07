@@ -87,6 +87,21 @@ def test_set_scope_isolates_chefs(tmp_path, monkeypatch) -> None:
     assert storage.recent_notes() == []
 
 
+def test_concurrent_writes_lose_nothing() -> None:
+    # 5 chats writing at once was losing saves — every write must survive
+    import threading
+
+    threads = [
+        threading.Thread(target=storage.add_note, args=(f"note {i}",))
+        for i in range(20)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(storage.list_notes()) == 20
+
+
 # --- behavioral (LLM chooses the tool) ---
 
 
